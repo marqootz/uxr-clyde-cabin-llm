@@ -11,6 +11,16 @@ logger = logging.getLogger(__name__)
 _speak_queue: asyncio.Queue[tuple[str, asyncio.Future[None]]] | None = None
 
 
+def _normalize_for_tts(text: str) -> str:
+    """Strip trailing punctuation so TTS doesn't pause or speak it; collapse repeated punctuation."""
+    if not text or not text.strip():
+        return text
+    t = text.strip()
+    while t and t[-1] in ".,!?;:":
+        t = t[:-1].rstrip()
+    return t if t else text.strip()
+
+
 async def _play_elevenlabs(text: str) -> None:
     """Stream TTS from ElevenLabs and play (blocking in executor or async)."""
     if not config.ELEVENLABS_API_KEY or not config.ELEVENLABS_VOICE_ID:
@@ -92,6 +102,11 @@ async def _speaker_loop() -> None:
         except asyncio.TimeoutError:
             continue
         text, done = item
+        text = _normalize_for_tts(text)
+        if not text:
+            if not done.done():
+                done.set_result(None)
+            continue
         echo_guard.register_utterance(text)
         echo_guard.set_speaking(True)
         try:

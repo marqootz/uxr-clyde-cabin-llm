@@ -124,6 +124,9 @@ async def play(uri: str, device_id: str | None = None) -> dict[str, Any]:
     params = {}
     if device_id:
         params["device_id"] = device_id
+    # Debug: log what we're sending (device_id truncated for logs)
+    device_log = (device_id[:12] + "..." if device_id and len(device_id) > 12 else device_id) or "default"
+    logger.info("Spotify play: uri=%s device_id=%s", uri, device_log)
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.put(
             f"{API_BASE}/me/player/play",
@@ -132,9 +135,12 @@ async def play(uri: str, device_id: str | None = None) -> dict[str, Any]:
             headers={"Authorization": f"Bearer {token}"},
         )
     if r.status_code == 204:
+        logger.info("Spotify play: 204 OK (playback started on device; if it stops, check browser console on cabin tab for [Spotify SDK] playback_error / state)")
         return {"ok": True, "uri": uri}
     if r.status_code == 404:
+        logger.warning("Spotify play: 404 (no active device). Response: %s", r.text[:150])
         return {"error": "No active Spotify device. Open the cabin display and ensure Spotify is connected."}
+    logger.warning("Spotify play: %s %s", r.status_code, r.text[:200])
     return {"error": f"Playback failed: {r.status_code} {r.text[:200]}"}
 
 

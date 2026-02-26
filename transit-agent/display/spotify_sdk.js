@@ -39,17 +39,32 @@
       volume: 0.8
     });
     player.addListener('ready', function (data) {
-      console.log('Spotify device ready:', data.device_id);
+      console.log('[Spotify SDK] device ready:', data.device_id);
       if (onReady) onReady(data.device_id);
     });
-    player.addListener('not_ready', function () {
+    player.addListener('not_ready', function (data) {
+      console.warn('[Spotify SDK] not_ready', data);
       if (onError) onError(new Error('Spotify player not ready'));
     });
     player.addListener('initialization_error', function (e) {
+      console.error('[Spotify SDK] initialization_error', e);
       if (onError) onError(e);
     });
     player.addListener('authentication_error', function (e) {
+      console.error('[Spotify SDK] authentication_error', e);
       if (onError) onError(e);
+    });
+    player.addListener('playback_error', function (e) {
+      console.error('[Spotify SDK] playback_error (playback may have stopped)', e);
+    });
+    player.addListener('account_error', function (e) {
+      console.error('[Spotify SDK] account_error', e);
+    });
+    player.addListener('player_state_changed', function (state) {
+      if (!state) return;
+      var s = state.paused ? 'paused' : 'playing';
+      var pos = state.position != null ? Math.round(state.position / 1000) + 's' : '?';
+      console.log('[Spotify SDK] state:', s, 'position:', pos, 'track:', state.track_window?.current_track?.name || '?');
     });
     player.connect();
   }

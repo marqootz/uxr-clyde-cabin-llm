@@ -22,7 +22,7 @@ import config
 
 # Must match exactly what you add in Spotify Dashboard → App → Settings → Redirect URIs
 REDIRECT_URI = (config.SPOTIFY_REDIRECT_URI or "http://127.0.0.1:8767/callback").strip()
-SCOPE = "user-modify-playback-state user-read-playback-state user-read-private"
+SCOPE = "user-modify-playback-state user-read-playback-state user-read-private streaming"
 AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 

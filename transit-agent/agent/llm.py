@@ -45,7 +45,7 @@ TOOLS = [
     },
     {
         "name": "set_audio",
-        "description": "Play, pause, or stop cabin music through the vehicle speakers (same as the agent voice). Use this by default when the user asks to play music (e.g. 'play jazz', 'put on some music') so they hear it on system audio. Call with action='play' and optional genre (e.g. jazz, classical, lo-fi).",
+        "description": "Play, pause, or stop cabin music through the vehicle speakers (same as the agent voice). Use when the user asks for music and Spotify is not configured or spotify_play failed. Call with action='play' and optional genre (e.g. jazz, classical, lo-fi).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -84,7 +84,7 @@ TOOLS = [
     },
     {
         "name": "spotify_play",
-        "description": "Search Spotify and play in the cabin display browser tab. Use only when the user explicitly says 'on Spotify' or 'play X on Spotify'. For generic requests like 'play jazz' or 'put on music', use set_audio instead so music plays through the same speakers as the agent. Requires Spotify Premium and the display tab connected as a Spotify device.",
+        "description": "Search Spotify and start playback (playlist or track). Use whenever the user asks to play music (e.g. 'play jazz', 'put on some music') if Spotify is available; no need for them to say 'on Spotify'. Fall back to set_audio only if Spotify is not configured or returns an error. Requires Spotify Premium and the cabin display tab connected as a Spotify device.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -106,9 +106,9 @@ Proactive offers already made this ride (do not repeat these): {offers_made}
 When taking an action, always call send_display with layout "status" and a short title/detail so the passenger sees confirmation on the display.
 
 When the user asks about weather or temperature, call get_weather (with optional location) and report the result briefly.
-When the user asks to play music (e.g. 'play jazz', 'put on some music'), use set_audio with action 'play' and genre so music plays through the cabin speakers (same as your voice). Only use spotify_play when they explicitly say 'on Spotify' (e.g. 'play jazz on Spotify').
+When the user asks to play music (e.g. 'play jazz', 'put on music'), use spotify_play first (query = genre or request); if it returns an error, use set_audio with action 'play' and genre. You do not need the user to say 'on Spotify' — prefer Spotify whenever they ask for music.
 
-Important: After every tool call you must reply with at least one short spoken sentence so the rider hears confirmation. After get_weather, say the temperature and conditions. After set_audio (play), confirm briefly (e.g. "Playing jazz through the cabin speakers."). After spotify_play, say what is playing or report the error in one sentence. Never end your turn with no text after using a tool.
+Important: After every tool call you must reply with at least one short spoken sentence. After get_weather, say the temperature and conditions. After set_audio (play) or spotify_play (success), reply with only 'Playing.' or 'Done.' — nothing else (no playlist name, no ride commentary like 'enjoy the music on your ride'). If a tool returns an error, say that in one short sentence. Never end your turn with no text after using a tool.
 
 Accuracy: Your spoken reply must match the actual tool result. If a tool returns an "error" or a "note" (e.g. no stream configured, Spotify not connected), do not claim success. Say what the tool reported in one short sentence (e.g. "Spotify isn't connected — open the cabin display to hear music there." or "Cabin audio isn't set up for streaming; I've updated the display.")."""
 
@@ -201,11 +201,13 @@ async def _start_music_playback(url: str | None = None) -> None:
         return
     try:
         if _is_remote_url(url):
-            # afplay does not support HTTP/HTTPS on macOS; use ffplay for streams
+            # afplay does not support HTTP/HTTPS on macOS; use ffplay for streams (reconnect so brief drops don't stop playback)
             if shutil.which("ffplay"):
                 logger.info("Starting cabin music: %s (ffplay)", url[:60] + "..." if len(url) > 60 else url)
                 _music_process = await asyncio.create_subprocess_exec(
-                    "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", url,
+                    "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet",
+                    "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2000",
+                    "-i", url,
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.PIPE,
                 )
@@ -228,7 +230,9 @@ async def _start_music_playback(url: str | None = None) -> None:
             elif shutil.which("ffplay"):
                 logger.info("Starting cabin music: %s (ffplay)", url[:60] + "..." if len(url) > 60 else url)
                 _music_process = await asyncio.create_subprocess_exec(
-                    "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", url,
+                    "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet",
+                    "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2000",
+                    "-i", url,
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.PIPE,
                 )

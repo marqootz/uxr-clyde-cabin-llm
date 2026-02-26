@@ -45,6 +45,11 @@ PYTHONPATH=. python -m agent.main
 - Display WebSocket server on port 8765. Open `display/index.html` in a browser (or Electron in kiosk for 1080×360).
 - Microphone is captured continuously; after speech end, transcript is sent to Claude; tool calls run against the mock API; response is spoken and display updated.
 
+## Weather & music
+
+- **Weather**: The agent can answer “what’s the weather?” using the **get_weather** tool and [Open-Meteo](https://open-meteo.com/) (no API key). Set `WEATHER_DEFAULT_LOCATION` in `.env` (e.g. city name or `lat,lon`) for the default area.
+- **Music (stream)**: “Play music” or “put on some jazz” uses **set_audio** (cabin state + optional playback). To hear actual audio when the user asks for music, set `MUSIC_STREAM_URL` in `.env` to a stream URL (e.g. an internet radio or MP3 stream). By default a fallback stream (KEXP) is used so cabin speakers play; set `MUSIC_STREAM_URL` in `.env` to override or `DEFAULT_MUSIC_STREAM_URL=` to disable. On macOS, stream URLs require **ffplay** (afplay does not support HTTP/HTTPS): `brew install ffmpeg`. Local files use afplay. - **Spotify**: For the full catalog, set `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, and `SPOTIFY_REFRESH_TOKEN` in `.env`. Requires Spotify Premium. Create an app at [Spotify Dashboard](https://developer.spotify.com/dashboard), add redirect `http://127.0.0.1:8767/callback`, run `python scripts/spotify_auth.py` to get the refresh token. **Music will not play until you open `display/spotify_connect.html` in a browser and (if prompted) connect Spotify there** — that tab becomes the cabin’s playback device. Say "play jazz on Spotify" or "play [song name]". To route that tab’s audio to the same speakers as the agent, set `SPOTIFY_OUTPUT_DEVICE_NAME` and install switchaudio-osx; see **SPOTIFY_INTEGRATION.md** in the repo root.
+
 ## Mac → Linux
 
 - Mic device: set `AUDIO_INPUT_DEVICE` / `AUDIO_OUTPUT_DEVICE` in config or env (names differ on macOS vs ALSA).

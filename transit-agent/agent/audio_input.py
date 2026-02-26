@@ -1,4 +1,4 @@
-"""VAD + Whisper STT pipeline. Continuous mic capture, speech boundaries, async transcript stream."""
+"""VAD + Whisper STT pipeline. Continuous mic capture, speech boundaries, async transcript stream. Gated by echo_guard."""
 
 import asyncio
 import logging
@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
+
+from agent import echo_guard
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,7 @@ def _energy_vad(samples: np.ndarray, threshold: float = 0.01) -> bool:
 
 
 # Queue-based async generator: callback runs in sounddevice thread; Whisper runs in executor; results go to queue.
-_transcript_queue: asyncio.Queue[str] | None = None
+_transcript_queue: asyncio.Queue | None = None
 
 
 async def transcripts_from_mic_queued(
@@ -56,8 +58,14 @@ async def transcripts_from_mic_queued(
     loop = asyncio.get_event_loop()
 
     def audio_callback(indata: np.ndarray, frames: int, time_info, status):
+        nonlocal speech_started, silence_frames
         if status:
             logger.debug("Sounddevice: %s", status)
+        if echo_guard.is_gated():
+            buffer.clear()
+            speech_started = False
+            silence_frames = 0
+            return
         chunk = indata.copy().flatten()
         if HAS_SILERO:
             ts = _get_speech_timestamps(
@@ -71,7 +79,6 @@ async def transcripts_from_mic_queued(
         else:
             is_speech = _energy_vad(chunk)
 
-        nonlocal silence_frames, speech_started
         if is_speech:
             speech_started = True
             silence_frames = 0
@@ -116,6 +123,9 @@ async def transcripts_from_mic_queued(
             try:
                 item = await asyncio.wait_for(_transcript_queue.get(), timeout=0.5)
                 text, ts = item
+                if echo_guard.is_echo(text):
+                    logger.debug("Skipping echo transcript: %r", text[:50])
+                    continue
                 yield (text, ts)
             except asyncio.TimeoutError:
                 continue

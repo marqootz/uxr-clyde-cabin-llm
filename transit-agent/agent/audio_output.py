@@ -2,9 +2,9 @@
 
 import asyncio
 import logging
-from queue import Queue
 
 import config
+from agent import echo_guard
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,8 @@ async def _speaker_loop() -> None:
         except asyncio.TimeoutError:
             continue
         text, done = item
+        echo_guard.register_utterance(text)
+        echo_guard.set_speaking(True)
         try:
             if config.USE_ELEVENLABS:
                 await _play_elevenlabs(text)
@@ -100,5 +102,6 @@ async def _speaker_loop() -> None:
         except Exception as e:
             logger.exception("TTS playback failed: %s", e)
         finally:
+            echo_guard.set_speaking(False, holdoff=True)
             if not done.done():
                 done.set_result(None)

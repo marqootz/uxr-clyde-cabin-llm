@@ -1,4 +1,5 @@
-"""Proactive trigger system: evaluate ride context every 30s and inject offers at most once per ride."""
+"""Proactive trigger system: evaluate ride context every 30s and inject offers at most once per ride.
+Announcements run only when can_run_now() is True so they do not overlap or compete with user responses."""
 
 import asyncio
 import logging
@@ -33,18 +34,24 @@ async def proactive_loop(
     on_trigger: Callable[[str, str], Awaitable[None]],
     offered: set[str],
     interval_sec: float = INTERVAL_SEC,
+    can_run_now: Callable[[], bool] | None = None,
 ) -> None:
     """
     Every interval_sec, evaluate triggers. If one fires and hasn't been offered this session,
-    call on_trigger(trigger_key, user_message) and add key to offered.
+    and can_run_now() is True (or omitted), call on_trigger(trigger_key, user_message) and add key to offered.
+    If can_run_now() is False, the trigger is not run and not marked offered, so it may fire again next interval.
     """
     while True:
         await asyncio.sleep(interval_sec)
+        if can_run_now is not None and not can_run_now():
+            continue
         ctx = get_context()
         for key, condition, _ in TRIGGERS:
             if key in offered:
                 continue
             if not condition(ctx):
+                continue
+            if can_run_now is not None and not can_run_now():
                 continue
             offered.add(key)
             message = TRIGGER_MESSAGES.get(key, f"[PROACTIVE] Trigger: {key}")

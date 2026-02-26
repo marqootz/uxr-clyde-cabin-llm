@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=360" />
+  <title>Spotify — Clyde Cabin</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f0f12; color: #e4e4e7; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; gap: 12px; }
+    #status { font-size: 18px; text-align: center; }
+    #status.error { color: #f87171; }
+    #status.ready { color: #4ade80; }
+    #hint { font-size: 14px; color: #a1a1aa; max-width: 480px; text-align: center; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #22c55e; color: #0f0f12; border: none; border-radius: 8px; }
+    button:disabled { opacity: 0.6; cursor: default; }
+  </style>
+</head>
+<body>
+  <p id="status">Connecting to Spotify…</p>
+  <p id="hint"></p>
+  <button id="allowBtn" type="button" style="display: none;">Allow audio (click once)</button>
+  <script src="spotify_sdk.js"></script>
+  <script>
+    var allowBtn = document.getElementById('allowBtn');
+    var hint = document.getElementById('hint');
+    function onAllowClick() {
+      allowBtn.disabled = true;
+      allowBtn.textContent = 'Audio allowed';
+      hint.textContent = 'Sound will play from this tab when you say e.g. "play jazz on Spotify".';
+    }
+    initSpotifyDevice(
+      function (deviceId) {
+        var s = document.getElementById('status');
+        s.textContent = 'Spotify connected. This tab is the cabin playback device.';
+        s.className = 'ready';
+        hint.textContent = 'Click the button below once so this tab can play sound. Device ID: ' + (deviceId || '—');
+        allowBtn.style.display = 'block';
+        allowBtn.addEventListener('click', onAllowClick);
+      },
+      function (err) {
+        var s = document.getElementById('status');
+        s.textContent = 'Spotify: ' + (err && err.message ? err.message : 'Not configured or token failed. Run the agent with Spotify in .env and open this page with the agent running.');
+        s.className = 'error';
+      }
+    );
+  </script>
+</body>
+</html>

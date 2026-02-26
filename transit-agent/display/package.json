@@ -1,0 +1,6 @@
+{
+  "name": "transit-cabin-display",
+  "version": "1.0.0",
+  "private": true,
+  "main": "electron_main.js"
+}

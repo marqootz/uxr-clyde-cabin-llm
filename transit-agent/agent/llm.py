@@ -94,9 +94,34 @@ TOOLS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "get_flight_status",
+        "description": "Look up flight status by airline and flight number. Use when the user asks about a specific flight (e.g. 'status of United 456', 'is Delta 123 on time'). airline should be IATA code (e.g. UA, AA, DL) or airline name; flight_number is the numeric or alphanumeric flight number.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "airline": {"type": "string", "description": "Airline IATA code (e.g. UA, AA, DL) or name (e.g. United, Delta)"},
+                "flight_number": {"type": "string", "description": "Flight number (e.g. 456, 123)"},
+            },
+            "required": ["airline", "flight_number"],
+        },
+    },
+    {
+        "name": "get_sports_scores",
+        "description": "Get recent or today's game scores. Use when the user asks about scores (e.g. 'NFL scores', 'how did the 49ers do', 'Lakers score', 'NBA today'). sport: nfl, nba, mlb, nhl, ncaaf, ncaab. Optional team: filter to that team (e.g. 49ers, Lakers). Optional date: YYYYMMDD; omit for today.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sport": {"type": "string", "description": "League: nfl, nba, mlb, nhl, ncaaf, ncaab"},
+                "team": {"type": "string", "description": "Optional: team name or nickname to filter (e.g. 49ers, Lakers, Patriots)"},
+                "date": {"type": "string", "description": "Optional: date YYYYMMDD; omit for today"},
+            },
+            "required": ["sport"],
+        },
+    },
 ]
 
-SYSTEM_PROMPT_TEMPLATE = """You are the in-cabin voice assistant for a small autonomous public transit vehicle. You are calm, brief, and co-pilot in tone. Keep responses to 2 sentences max unless the user asks for more. Your replies are spoken aloud; use minimal punctuation so the voice does not pause or read punctuation oddly. Do not ask follow-up questions unless strictly necessary. When you take an action (lights, climate, audio), confirm briefly in speech and use send_display to push a status card.
+SYSTEM_PROMPT_TEMPLATE = """You are the in-cabin voice assistant for a small autonomous public transit vehicle. You are calm, brief, and co-pilot in tone. Keep responses to 2 sentences max unless the user asks for more. Your replies are spoken aloud; use minimal punctuation so the voice does not pause or read punctuation oddly. Do not ask follow-up questions unless strictly necessary. Do not volunteer what you can do or list your capabilities (e.g. "I can also adjust lights or play music") unless the user explicitly asks. When you take an action (lights, climate, audio), confirm briefly in speech and use send_display to push a status card.
 
 Current ride context (JSON):
 {context_json}
@@ -106,11 +131,13 @@ Proactive offers already made this ride (do not repeat these): {offers_made}
 When taking an action, always call send_display with layout "status" and a short title/detail so the passenger sees confirmation on the display.
 
 When the user asks about weather or temperature, call get_weather (with optional location) and report the result briefly.
+When the user asks about a flight (e.g. status of United 456, is Delta 123 on time), call get_flight_status with airline and flight_number and report the status briefly (departure/arrival, on-time/delayed/cancelled).
+When the user asks about sports scores (e.g. NFL scores, how did the 49ers do, Lakers score), call get_sports_scores with sport (nfl, nba, mlb, nhl, ncaaf, ncaab) and optional team; report the score(s) in one short sentence.
 When the user asks to play music (e.g. 'play jazz', 'put on music'), use spotify_play first (query = genre or request); if it returns an error, use set_audio with action 'play' and genre. You do not need the user to say 'on Spotify' — prefer Spotify whenever they ask for music.
 
 When the user requests any action (music, lights, climate, display, etc.), your very first reply must start with a single brief acknowledgment phrase that the user will hear immediately — e.g. "Let me do that." or "On it." or "One moment." Put this acknowledgment as the first part of your response (one short sentence), then use the appropriate tool(s). Do not combine the acknowledgment with other commentary in the same sentence.
 
-Important: After every tool call you must reply with at least one short spoken sentence. After get_weather, say the temperature and conditions. After set_audio (play) or spotify_play (success), reply with only 'Playing.' or 'Done.' — nothing else (no playlist name, no ride commentary like 'enjoy the music on your ride'). If a tool returns an error, say that in one short sentence. Never end your turn with no text after using a tool.
+Important: After every tool call you must reply with at least one short spoken sentence. After get_weather, say the temperature and conditions. After get_flight_status, say the flight status in one short sentence (e.g. on time, delayed X minutes, cancelled, or scheduled/estimated times). After get_sports_scores, say the score(s) in one short sentence. When speaking a score aloud use the word 'to' between the numbers (e.g. '110 to 98'), not a dash or hyphen. After set_audio (play) or spotify_play (success), reply with only 'Playing.' or 'Done.' — nothing else (no playlist name, no ride commentary like 'enjoy the music on your ride'). If a tool returns an error, say that in one short sentence. Never end your turn with no text after using a tool.
 
 Accuracy: Your spoken reply must match the actual tool result. If a tool returns an "error" or a "note" (e.g. no stream configured, Spotify not connected), do not claim success. Say what the tool reported in one short sentence (e.g. "Spotify isn't connected — open the cabin display to hear music there." or "Cabin audio isn't set up for streaming; I've updated the display.")."""
 
@@ -173,6 +200,140 @@ async def _fetch_weather(location: str) -> dict:
         "humidity_percent": cur.get("relative_humidity_2m"),
         "wind_kmh": cur.get("wind_speed_10m"),
     }
+
+
+# AviationStack: optional API key, free tier 100 req/month
+FLIGHT_API_URL = "https://api.aviationstack.com/v1/flights"
+AIRLINE_NAME_TO_IATA = {
+    "united": "UA",
+    "american": "AA",
+    "delta": "DL",
+    "southwest": "WN",
+    "jetblue": "B6",
+    "alaska": "AS",
+    "spirit": "NK",
+    "frontier": "F9",
+    "allegiant": "G4",
+}
+
+
+def _airline_to_iata(airline: str) -> str:
+    """Convert airline name or IATA code to 2-letter IATA code for API."""
+    s = (airline or "").strip().upper()
+    if len(s) == 2 and s.isalpha():
+        return s
+    key = (airline or "").strip().lower()
+    return AIRLINE_NAME_TO_IATA.get(key, s[:2] if len(s) >= 2 else s)
+
+
+async def _fetch_flight_status(airline: str, flight_number: str) -> dict:
+    """Fetch flight status from AviationStack. Returns summary dict or error."""
+    if not config.AVIATIONSTACK_API_KEY:
+        return {
+            "error": "Flight lookup is not configured. Add AVIATIONSTACK_API_KEY to .env (free key at aviationstack.com).",
+        }
+    iata = _airline_to_iata(airline)
+    num = (flight_number or "").strip().replace(" ", "")
+    flight_iata = f"{iata}{num}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                FLIGHT_API_URL,
+                params={
+                    "access_key": config.AVIATIONSTACK_API_KEY,
+                    "flight_iata": flight_iata,
+                    "limit": 1,
+                },
+            )
+            data = r.json()
+    except Exception as e:
+        logger.warning("Flight API request failed: %s", e)
+        return {"error": "Could not reach flight status service."}
+    err = data.get("error")
+    if err:
+        return {"error": err.get("message", str(err))}
+    flights = data.get("data") or []
+    if not flights:
+        return {"error": f"No flight found for {flight_iata}. Check airline and number."}
+    f = flights[0]
+    dep = (f.get("departure") or {})
+    arr = (f.get("arrival") or {})
+    status = (f.get("flight_status") or "").lower()
+    return {
+        "flight_iata": flight_iata,
+        "status": status,
+        "departure_airport": dep.get("iata"),
+        "departure_scheduled": dep.get("scheduled", "").replace("T", " ")[:16],
+        "departure_estimated": (dep.get("estimated") or "").replace("T", " ")[:16],
+        "arrival_airport": arr.get("iata"),
+        "arrival_scheduled": arr.get("scheduled", "").replace("T", " ")[:16],
+        "arrival_estimated": (arr.get("estimated") or "").replace("T", " ")[:16],
+        "delay_minutes": dep.get("delay") or arr.get("delay"),
+    }
+
+
+# ESPN public scoreboard (no API key). Sport slug -> (sport, league) path segment.
+ESPN_SCOREBOARD_BASE = "https://site.api.espn.com/apis/site/v2/sports"
+ESPN_SPORT_PATHS = {
+    "nfl": "football/nfl",
+    "nba": "basketball/nba",
+    "mlb": "baseball/mlb",
+    "nhl": "hockey/nhl",
+    "ncaaf": "football/college-football",
+    "ncaab": "basketball/mens-college-basketball",
+}
+
+
+async def _fetch_espn_scoreboard(sport: str, team_filter: str | None = None, date_yyyymmdd: str | None = None) -> dict:
+    """Fetch scoreboard from ESPN public API. Returns games list or error. No API key."""
+    sport_lower = (sport or "").strip().lower()
+    path = ESPN_SPORT_PATHS.get(sport_lower)
+    if not path:
+        return {"error": f"Unknown sport '{sport}'. Use one of: nfl, nba, mlb, nhl, ncaaf, ncaab."}
+    url = f"{ESPN_SCOREBOARD_BASE}/{path}/scoreboard"
+    params = {}
+    if date_yyyymmdd:
+        params["dates"] = date_yyyymmdd.replace("-", "")[:8]
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url, params=params or None)
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        logger.warning("ESPN scoreboard request failed: %s", e)
+        return {"error": "Could not reach sports scores."}
+    events = data.get("events") or []
+    games = []
+    team_key = (team_filter or "").strip().lower()
+    for ev in events:
+        comps = (ev.get("competitions") or [{}])[0]
+        competitors = comps.get("competitors") or []
+        status = (comps.get("status") or {}).get("type") or {}
+        status_desc = (status.get("shortDetail") or status.get("description") or "—").strip()
+        home = next((c for c in competitors if c.get("homeAway") == "home"), None)
+        away = next((c for c in competitors if c.get("homeAway") == "away"), None)
+        if not home or not away:
+            continue
+        home_team = (home.get("team") or {}).get("displayName") or (home.get("team") or {}).get("shortDisplayName") or "—"
+        away_team = (away.get("team") or {}).get("displayName") or (away.get("team") or {}).get("shortDisplayName") or "—"
+        home_score = (home.get("score") or "").strip()
+        away_score = (away.get("score") or "").strip()
+        if team_key:
+            if team_key not in home_team.lower() and team_key not in away_team.lower():
+                abbrev = (home.get("team") or {}).get("abbreviation", "").lower()
+                abbrev2 = (away.get("team") or {}).get("abbreviation", "").lower()
+                if team_key not in abbrev and team_key not in abbrev2:
+                    continue
+        score_spoken = f"{away_score} to {home_score}" if (away_score and home_score) else f"{away_score or home_score}"
+        games.append({
+            "home_team": home_team,
+            "away_team": away_team,
+            "home_score": home_score,
+            "away_score": away_score,
+            "score_spoken": score_spoken,
+            "status": status_desc,
+        })
+    return {"sport": sport_lower, "games": games}
 
 
 _music_process: asyncio.subprocess.Process | None = None
@@ -322,6 +483,19 @@ async def execute_tool(name: str, arguments: dict[str, Any], ctx: RideContext) -
                 kind = "playlist"
             device_id = config.SPOTIFY_DEVICE_ID or None
             result = await spotify_client.search_and_play(query, type=kind, device_id=device_id)
+            return json.dumps(result)
+        if name == "get_flight_status":
+            airline = (arguments.get("airline") or "").strip()
+            flight_number = (arguments.get("flight_number") or "").strip()
+            if not airline or not flight_number:
+                return json.dumps({"error": "airline and flight_number are required"})
+            result = await _fetch_flight_status(airline, flight_number)
+            return json.dumps(result)
+        if name == "get_sports_scores":
+            sport = (arguments.get("sport") or "").strip()
+            team = (arguments.get("team") or "").strip() or None
+            date_arg = (arguments.get("date") or "").strip() or None
+            result = await _fetch_espn_scoreboard(sport, team_filter=team, date_yyyymmdd=date_arg)
             return json.dumps(result)
         return json.dumps({"error": f"Unknown tool: {name}"})
     except Exception as e:

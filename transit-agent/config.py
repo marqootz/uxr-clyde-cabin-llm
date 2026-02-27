@@ -54,3 +54,6 @@ SPOTIFY_DEVICE_ID: str = os.environ.get("SPOTIFY_DEVICE_ID", "").strip()  # opti
 SPOTIFY_OUTPUT_DEVICE_NAME: str = os.environ.get("SPOTIFY_OUTPUT_DEVICE_NAME", "").strip()
 SPOTIFY_TOKEN_PORT: int = int(os.environ.get("SPOTIFY_TOKEN_PORT", "8766"))  # for display to get SDK token
 USE_SPOTIFY: bool = bool(SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET and SPOTIFY_REFRESH_TOKEN)
+
+# Flight status (optional): AviationStack free tier, 100 req/month. Get key at https://aviationstack.com/
+AVIATIONSTACK_API_KEY: str = os.environ.get("AVIATIONSTACK_API_KEY", "").strip()

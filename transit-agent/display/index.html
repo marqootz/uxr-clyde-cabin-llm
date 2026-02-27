@@ -5,56 +5,239 @@
   <meta name="viewport" content="width=1080, height=360" />
   <title>Cabin Display</title>
   <style>
+    @property --pct {
+      syntax: '<number>';
+      inherits: false;
+      initial-value: 0;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 1080px; height: 360px; overflow: hidden; font-family: system-ui, sans-serif; background: #0f0f12; color: #e4e4e7; }
-    #root { width: 100%; height: 100%; position: relative; }
 
-    [data-layout] { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; }
-    [data-layout].active { display: flex; }
+    html, body {
+      width: 1080px; height: 360px; overflow: hidden;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #000; color: #fff;
+      display: flex;
+    }
 
-    /* Idle: route progress, ETA, next stop */
-    #layout-idle { flex-direction: column; gap: 16px; }
-    #layout-idle .route-name { font-size: 20px; opacity: 0.8; }
-    #layout-idle .progress-bar { width: 100%; max-width: 600px; height: 8px; background: #27272a; border-radius: 4px; overflow: hidden; }
-    #layout-idle .progress-fill { height: 100%; background: #3b82f6; border-radius: 4px; width: 0%; transition: width 0.3s; }
-    #layout-idle .next-stop { font-size: 28px; font-weight: 600; }
-    #layout-idle .eta { font-size: 18px; opacity: 0.7; }
+    /* ── CENTER: ride progress — always visible, fills all non-info space ── */
+    #progress-panel {
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+    }
 
-    /* Speaking: live transcript */
-    #layout-speaking { text-align: center; }
-    #layout-speaking #speaking-text { font-size: 22px; line-height: 1.5; max-width: 900px; }
+    /* Route name — small, dimmed, at top */
+    .route-name {
+      font-size: 13px;
+      opacity: 0.45;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 10px;
+    }
 
-    /* Status: action confirmation card */
-    #layout-status { background: #18181b; border-radius: 12px; padding: 24px 32px; }
-    #layout-status #status-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
-    #layout-status #status-detail { font-size: 16px; opacity: 0.8; }
+    /* Next stop — the large prominent text */
+    .next-stop {
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
-    /* Arrival: large stop name */
-    #layout-arrival { flex-direction: column; gap: 8px; }
-    #layout-arrival #arrival-stop { font-size: 42px; font-weight: 700; }
-    #layout-arrival #arrival-walk { font-size: 18px; opacity: 0.7; }
+    /* ETA — small, below next-stop */
+    .eta-badge {
+      font-size: 24px;
+      opacity: 0.45;
+      margin-top: 8px;
+    }
+
+    /* Progress bar pushed to bottom */
+    .progress-section {
+      margin-top: auto;
+    }
+    .progress-track {
+      height: 40px;
+      background: #4F4F4F;
+      border-radius: 20px;
+      position: relative;
+    }
+    .progress-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      background: rgba(184, 81, 210, 0.30);
+      border-radius: 20px;
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+    .progress-knob {
+      position: absolute;
+      top: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #B851D2;
+      left: calc(var(--pct) * (100% - 40px));
+      transition: --pct 0.5s ease;
+      will-change: left;
+    }
+
+    /* Info cards (inside feedback-content) */
+    #info-speaking { display: none; }
+    #info-speaking p {
+      font-size: 24px;
+      line-height: 1.6;
+      opacity: 0.92;
+    }
+
+    /* Info cards */
+    .info-card {
+      background: rgba(255, 255, 255, 0.07);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .info-card-label {
+      font-size: 11px;
+      opacity: 0.4;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      margin-bottom: 5px;
+    }
+    .info-card-value {
+      font-size: 20px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .info-card-detail {
+      font-size: 13px;
+      opacity: 0.5;
+      margin-top: 3px;
+    }
+
+    /* ── Feedback context container: presence circle + response content ── */
+    #feedback-container {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: row-reverse;
+      align-items: flex-end;
+      gap: 16px;
+      padding: 22px 22px 22px 0;
+      border-left: 1px solid rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      transition: border-color 0.4s ease;
+    }
+    #feedback-container.expanded {
+      border-left-color: rgba(255, 255, 255, 0.12);
+    }
+
+    /* Presence circle — always visible inside feedback container, always animating */
+    #presence-circle {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #fff;
+      border: none;
+      cursor: pointer;
+      outline: none;
+      transform-origin: center center;
+      will-change: transform;
+    }
+
+    /* Response content — visible when container is expanded; width animates from 0 */
+    #feedback-content {
+      flex: 0 0 0;
+      min-width: 0;
+      max-width: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+    }
+    #feedback-container.expanded #feedback-content {
+      flex: 1 1 0;
+      max-width: 280px;
+      opacity: 1;
+      pointer-events: auto;
+    }
+    #feedback-container.expanded #info-speaking {
+      display: block !important;
+    }
+
+    /* Agent speech transcript */
+    #info-speaking { display: none; }
+    #info-speaking p {
+      font-size: 24px;
+      line-height: 1.6;
+      opacity: 0.92;
+    }
+
+    /* Media area for image/video (optional) */
+    #feedback-media {
+      min-height: 0;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    #feedback-media img,
+    #feedback-media video {
+      display: block;
+      max-width: 100%;
+      max-height: 120px;
+      object-fit: contain;
+    }
+    #feedback-media:empty { display: none; }
   </style>
 </head>
 <body>
-  <div id="root">
-    <div id="layout-idle" data-layout class="active">
-      <span id="idle-route" class="route-name">—</span>
-      <div class="progress-bar"><div id="idle-progress" class="progress-fill"></div></div>
-      <span id="idle-next-stop" class="next-stop">—</span>
-      <span id="idle-eta" class="eta">—</span>
-    </div>
-    <div id="layout-speaking" data-layout>
-      <p id="speaking-text"></p>
-    </div>
-    <div id="layout-status" data-layout>
-      <div id="status-title">—</div>
-      <div id="status-detail"></div>
-    </div>
-    <div id="layout-arrival" data-layout>
-      <span id="arrival-stop">—</span>
-      <span id="arrival-walk"></span>
+
+  <!-- CENTER: ride progress — always visible -->
+  <div id="progress-panel">
+    <span id="route-name" class="route-name">—</span>
+    <span id="next-stop"  class="next-stop">—</span>
+    <span id="eta-badge"  class="eta-badge">—</span>
+    <div class="progress-section">
+      <div class="progress-track">
+        <div id="progress-fill" class="progress-fill"></div>
+        <div id="progress-knob" class="progress-knob"></div>
+      </div>
     </div>
   </div>
+
+  <!-- RIGHT: feedback context — presence circle (always visible + animated) and response content (expands when agent responds) -->
+  <div id="feedback-container">
+    <button id="presence-circle" title="Presence"></button>
+    <div id="feedback-content">
+      <div id="feedback-media"></div>
+      <div id="info-speaking">
+        <p id="info-speaking-p"></p>
+      </div>
+      <div id="info-card-primary" class="info-card" style="display:none">
+        <div id="info-label"  class="info-card-label">Status</div>
+        <div id="info-value"  class="info-card-value">—</div>
+        <div id="info-detail" class="info-card-detail"></div>
+      </div>
+      <div id="info-card-secondary" class="info-card" style="display:none">
+        <div class="info-card-label">Walk</div>
+        <div id="info-walk" class="info-card-value">—</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="layers/presence.js"></script>
   <script src="ws_client.js"></script>
   <script src="main.js"></script>
 </body>

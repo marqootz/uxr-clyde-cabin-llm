@@ -181,11 +181,13 @@ async def main() -> None:
         if alert_path.is_file():
             async with _turn_lock:
                 await play_local_file(alert_path)
+        await display_server.wait_for_client(timeout=2.0)
         echo_guard.register_utterance(intro_text)  # so delayed echo of intro is not treated as user input
         async with _turn_lock:
             await display_server.send_layout("speaking", {"text": intro_text})
             await speak(intro_text)
             _last_turn_end_time = time.monotonic()
+        offered.add("boarding")
         await display_server.send_layout("idle", {
             "route_name": intro_ctx.route_name,
             "next_stop": intro_ctx.next_stop,

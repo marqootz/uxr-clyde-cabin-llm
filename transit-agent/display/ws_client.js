@@ -15,7 +15,18 @@ function connect() {
   };
   ws.onmessage = (event) => {
     try {
-      const { layout, data } = JSON.parse(event.data);
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'audio_level') {
+        if (window.presenceLayer && typeof msg.value === 'number') {
+          window.presenceLayer.setAudioLevel(msg.value);
+        }
+        return;
+      }
+      if (msg.type === 'state') {
+        window.dispatchEvent(new CustomEvent('display-update', { detail: { layout: msg.value, data: msg.data || {} } }));
+        return;
+      }
+      const { layout, data } = msg;
       window.dispatchEvent(new CustomEvent('display-update', { detail: { layout, data } }));
     } catch (e) {
       console.error('Invalid display message', e);

@@ -1,4 +1,4 @@
-"""Proactive trigger system: evaluate ride context every 30s and inject offers at most once per ride.
+"""Proactive trigger system: evaluate ride context periodically and inject offers at most once per ride.
 Announcements run only when can_run_now() is True so they do not overlap or compete with user responses."""
 
 import asyncio
@@ -9,23 +9,23 @@ from agent.context import RideContext
 
 logger = logging.getLogger(__name__)
 
-INTERVAL_SEC = 30
+INTERVAL_SEC = 60
 
 TRIGGERS = [
     ("boarding", lambda ctx: ctx.elapsed_seconds < 15, "Welcome + one capability offer"),
-    ("long_ride", lambda ctx: ctx.ride_duration_seconds > 600 and ctx.elapsed_seconds < 120, "Offer ambient lighting or music"),
+    ("long_ride", lambda ctx: ctx.ride_duration_seconds > 600 and 180 < ctx.elapsed_seconds < 300, "Offer ambient lighting or music"),
     ("pre_arrival", lambda ctx: ctx.eta_seconds < 180, "Heads up, stop name"),
-    ("nighttime", lambda ctx: ctx.hour_of_day > 20 or ctx.hour_of_day < 6, "Offer to adjust cabin lighting"),
-    ("mid_ride_silence", lambda ctx: ctx.elapsed_seconds > 300, "Single gentle offer (no recent interaction)"),
+    ("nighttime", lambda ctx: (ctx.hour_of_day > 21 or ctx.hour_of_day < 5) and ctx.elapsed_seconds > 120, "Offer to adjust cabin lighting"),
+    ("mid_ride_silence", lambda ctx: ctx.elapsed_seconds > 600, "Single gentle offer (no recent interaction)"),
 ]
 
 # Default messages for each trigger (agent will respond in its tone)
 TRIGGER_MESSAGES = {
     "boarding": "[PROACTIVE] A passenger just boarded. Give a brief welcome and one short capability offer (e.g. lights, climate, or music).",
-    "long_ride": "[PROACTIVE] This is a long ride and we're early in it. Offer ambient lighting or music once, briefly.",
-    "pre_arrival": "[PROACTIVE] We're arriving soon. Give a heads up with the next stop name and approximate time.",
-    "nighttime": "[PROACTIVE] It's nighttime. Offer to adjust cabin lighting if they'd like.",
-    "mid_ride_silence": "[PROACTIVE] Mid-ride with no recent interaction. Make one gentle, brief offer (e.g. comfort or info). Do not repeat previous offers.",
+    "long_ride": "[PROACTIVE] This is a long ride. Offer ambient lighting or music once, in one short sentence. Do not list other capabilities.",
+    "pre_arrival": "[PROACTIVE] We're arriving soon. Give a heads up with the next stop name and approximate time only.",
+    "nighttime": "[PROACTIVE] It's nighttime. Offer once to adjust cabin lighting if they'd like. One sentence.",
+    "mid_ride_silence": "[PROACTIVE] Mid-ride with no recent interaction. One gentle, brief offer only. Do not list capabilities or repeat previous offers.",
 }
 
 

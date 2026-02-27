@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import shutil
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import anthropic
 import httpx
@@ -107,6 +107,8 @@ When taking an action, always call send_display with layout "status" and a short
 
 When the user asks about weather or temperature, call get_weather (with optional location) and report the result briefly.
 When the user asks to play music (e.g. 'play jazz', 'put on music'), use spotify_play first (query = genre or request); if it returns an error, use set_audio with action 'play' and genre. You do not need the user to say 'on Spotify' — prefer Spotify whenever they ask for music.
+
+When the user requests any action (music, lights, climate, display, etc.), your very first reply must start with a single brief acknowledgment phrase that the user will hear immediately — e.g. "Let me do that." or "On it." or "One moment." Put this acknowledgment as the first part of your response (one short sentence), then use the appropriate tool(s). Do not combine the acknowledgment with other commentary in the same sentence.
 
 Important: After every tool call you must reply with at least one short spoken sentence. After get_weather, say the temperature and conditions. After set_audio (play) or spotify_play (success), reply with only 'Playing.' or 'Done.' — nothing else (no playlist name, no ride commentary like 'enjoy the music on your ride'). If a tool returns an error, say that in one short sentence. Never end your turn with no text after using a tool.
 
@@ -352,9 +354,12 @@ async def run_turn(
     ctx: RideContext,
     offers_made: list[str],
     conversation: list[dict],
+    on_immediate_ack: Callable[[str], Awaitable[None]] | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Send user message to Claude with context and tools; execute tool calls and loop until done.
+    If the first response includes text before tool_use, on_immediate_ack(first_sentence) is called
+    so the user hears a quick acknowledgment before tools run.
     Returns (final assistant text for TTS, updated conversation messages).
     """
     client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
@@ -383,6 +388,10 @@ async def run_turn(
             break
 
         if response.stop_reason == "tool_use":
+            if tools_executed == 0 and on_immediate_ack:
+                ack_text = _first_sentence(_text_from_content(response.content))
+                if ack_text:
+                    await on_immediate_ack(ack_text)
             messages = messages + [{"role": "assistant", "content": response.content}]
             for block in response.content:
                 if (isinstance(block, dict) and block.get("type") == "tool_use") or getattr(block, "type", None) == "tool_use":
@@ -426,6 +435,19 @@ def _text_from_content(content: list[Any]) -> str:
                 if t:
                     out.append(t)
     return "".join(out)
+
+
+def _first_sentence(text: str) -> str:
+    """Return the first sentence (up to first . ! ? or first line) for immediate TTS ack."""
+    if not text or not text.strip():
+        return ""
+    t = text.strip()
+    first_line = t.split("\n")[0].strip()
+    for end in (".", "!", "?"):
+        i = first_line.find(end)
+        if i >= 0:
+            return first_line[: i + 1].strip()
+    return first_line
 
 
 def add_proactive_offer(offers_made: list[str], offer_key: str) -> None:

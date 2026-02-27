@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import shutil
+from pathlib import Path
 
 import config
 from agent import echo_guard
@@ -77,6 +79,33 @@ def _play_pyttsx3(text: str) -> None:
     engine = pyttsx3.init()
     engine.say(text)
     engine.runAndWait()
+
+
+async def play_local_file(file_path: str | Path) -> None:
+    """Play a local audio file (e.g. .mp3) and return when done. Uses afplay on macOS, else ffplay."""
+    path = Path(file_path)
+    if not path.is_file():
+        logger.warning("play_local_file: not a file %s", path)
+        return
+    try:
+        if shutil.which("afplay"):
+            proc = await asyncio.create_subprocess_exec(
+                "afplay", str(path),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+        elif shutil.which("ffplay"):
+            proc = await asyncio.create_subprocess_exec(
+                "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+        else:
+            logger.warning("play_local_file: no afplay or ffplay found")
+    except Exception as e:
+        logger.warning("play_local_file failed: %s", e)
 
 
 async def speak(text: str) -> None:

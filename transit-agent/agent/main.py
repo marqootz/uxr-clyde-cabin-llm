@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 from agent.audio_input import transcript_generator
-from agent.audio_output import speak
+from agent.audio_output import play_local_file, speak
 from agent.context import RideContext, make_mock_context
 from agent import display_server
 from agent import echo_guard
@@ -81,13 +81,23 @@ def _mark_transcript_processed(transcript: str) -> None:
     _last_transcript_time = time.monotonic()
 
 
+async def _speak_immediate_ack(ack_text: str) -> None:
+    """Register ack with echo guard, update display, and speak so user knows they were heard."""
+    echo_guard.register_utterance(ack_text)
+    await display_server.send_layout("speaking", {"text": ack_text})
+    await speak(ack_text)
+
+
 async def on_proactive_trigger(trigger_key: str, user_message: str) -> None:
     """Called when a proactive trigger fires: inject message and get LLM to respond."""
     global _last_turn_end_time
     async with _turn_lock:
         ctx = get_ride_context()
         add_proactive_offer(offers_made_shared, trigger_key)
-        text, _ = await run_turn(user_message, ctx, offers_made_shared, proactive_conversation)
+        text, _ = await run_turn(
+            user_message, ctx, offers_made_shared, proactive_conversation,
+            on_immediate_ack=_speak_immediate_ack,
+        )
         if text:
             await display_server.send_layout("speaking", {"text": text})
             await speak(text)
@@ -164,9 +174,13 @@ async def main() -> None:
             "progress_pct": 0,
         })
 
-        # 4.5. Introduce itself once at startup (fixed copy by rider type)
+        # 4.5. Play alert sound then introduce itself once at startup (fixed copy by rider type)
         intro_ctx = get_ride_context()
         intro_text = INTRO_DEMO if config.RIDER_TYPE == "demo" else INTRO_COMMUTER
+        alert_path = Path(__file__).resolve().parent.parent / "assets" / "voicePromptAlert2.mp3"
+        if alert_path.is_file():
+            async with _turn_lock:
+                await play_local_file(alert_path)
         echo_guard.register_utterance(intro_text)  # so delayed echo of intro is not treated as user input
         async with _turn_lock:
             await display_server.send_layout("speaking", {"text": intro_text})
@@ -205,7 +219,10 @@ async def main() -> None:
                 pass
 
             async with _turn_lock:
-                text, conversation = await run_turn(transcript, ctx, offers_made_shared, conversation)
+                text, conversation = await run_turn(
+                    transcript, ctx, offers_made_shared, conversation,
+                    on_immediate_ack=_speak_immediate_ack,
+                )
                 if text:
                     logger.info("Speaking: %s", text[:80] + "..." if len(text) > 80 else text)
                     await display_server.send_layout("speaking", {"text": text})

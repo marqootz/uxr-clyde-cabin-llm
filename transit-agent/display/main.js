@@ -182,7 +182,7 @@ function startTranscriptReveal(text, options = {}) {
   function tick(now) {
     const elapsed  = now - startTime;
     const progress = durationMs <= 0 ? 1 : Math.min(elapsed / durationMs, 1);
-    const eased    = 1 - Math.pow(1 - progress, 3);  // cubic ease-out
+    const eased    = 1 - Math.pow(1 - progress, 2);  // quadratic ease-out (softer than cubic)
     const y        = initialY + eased * (finalY - initialY);
     textEl.style.transform = `translateY(${y}px)`;
     if (progress < 1) {

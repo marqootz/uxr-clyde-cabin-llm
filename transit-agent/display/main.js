@@ -27,8 +27,7 @@ function updateRideProgress({ next_stop, eta_seconds, progress_pct } = {}) {
   document.getElementById('eta-badge').textContent  = formatEta(eta_seconds);
 
   const pct = progress_pct != null ? Math.max(0, Math.min(100, progress_pct)) : 0;
-  document.getElementById('progress-fill').style.width = `${pct}%`;
-  document.getElementById('progress-knob').style.setProperty('--pct', pct / 100);
+  document.getElementById('progress-track').style.setProperty('--pct', pct / 100);
 }
 
 // ─── Feedback container (presence circle + response content) ───────────────────
@@ -80,6 +79,21 @@ function cancelTypeout() {
   }
 }
 
+const SPEAKING_MAX_LINES = 4;
+
+function trimToMaxLines(p) {
+  if (!p || !p.firstChild) return;
+  const style = getComputedStyle(p);
+  const lineHeight = parseFloat(style.lineHeight) || 24 * 1.6;
+  const maxHeight = SPEAKING_MAX_LINES * lineHeight;
+  while (p.scrollHeight > maxHeight && p.firstChild) {
+    p.removeChild(p.firstChild);
+    if (p.firstChild && p.firstChild.nodeType === Node.TEXT_NODE) {
+      p.removeChild(p.firstChild);
+    }
+  }
+}
+
 function startTypeout(text) {
   cancelTypeout();
   const p = document.getElementById('info-speaking-p');
@@ -92,8 +106,10 @@ function startTypeout(text) {
     span.className = 'word';
     span.textContent = word;
     p.appendChild(span);
+    window.presenceLayer?.setWord(word);
   }
   appendWord(words[0]);
+  trimToMaxLines(p);
   let i = 1;
   const stepMs = 200;
   typeoutTimer = setInterval(() => {
@@ -104,6 +120,7 @@ function startTypeout(text) {
     p.appendChild(document.createTextNode(' '));
     appendWord(words[i]);
     i += 1;
+    trimToMaxLines(p);
   }, stepMs);
 }
 

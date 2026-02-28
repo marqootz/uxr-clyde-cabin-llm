@@ -29,21 +29,9 @@
       padding: 24px;
     }
 
-    /* Route name — small, dimmed, at top */
-    .route-name {
-      font-size: 13px;
-      opacity: 0.45;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin-bottom: 10px;
-    }
-
     /* Next stop — the large prominent text */
     .next-stop {
-      font-size: 48px;
+      font-size: 124px;
       font-weight: 700;
       letter-spacing: -0.02em;
       line-height: 1.05;
@@ -52,9 +40,9 @@
       text-overflow: ellipsis;
     }
 
-    /* ETA — small, below next-stop */
+    /* ETA — below next-stop */
     .eta-badge {
-      font-size: 24px;
+      font-size: 64px;
       opacity: 0.45;
       margin-top: 8px;
     }
@@ -153,7 +141,7 @@
       will-change: transform;
     }
 
-    /* Response content — visible when container is expanded; width animates from 0 */
+    /* Response content — visible when expanded; fixed width immediately, no grow */
     #feedback-content {
       flex: 0 0 0;
       min-width: 0;
@@ -162,19 +150,42 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
+      align-items: flex-end;
       gap: 12px;
       opacity: 0;
       pointer-events: none;
-      transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+      transition: opacity 0.4s ease;
     }
     #feedback-container.expanded #feedback-content {
-      flex: 1 1 0;
+      flex: 0 0 280px;
+      width: 280px;
       max-width: 280px;
       opacity: 1;
       pointer-events: auto;
     }
+    #feedback-container.expanded #feedback-content.fade-out {
+      opacity: 0;
+    }
+
+    /* Fade in each word as it appears (left to right); longer duration */
+    #info-speaking-p .word {
+      display: inline;
+      opacity: 0;
+      animation: wordFadeIn 0.5s ease forwards;
+    }
+    @keyframes wordFadeIn {
+      to { opacity: 1; }
+    }
     #feedback-container.expanded #info-speaking {
       display: block !important;
+      width: 100%;
+      text-align: right;
+    }
+    #info-speaking-p {
+      direction: ltr;
+      text-align: left;
+      display: inline-block;
+      margin-left: auto;
     }
 
     /* Agent speech transcript */
@@ -206,7 +217,6 @@
 
   <!-- CENTER: ride progress — always visible -->
   <div id="progress-panel">
-    <span id="route-name" class="route-name">—</span>
     <span id="next-stop"  class="next-stop">—</span>
     <span id="eta-badge"  class="eta-badge">—</span>
     <div class="progress-section">

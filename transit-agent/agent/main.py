@@ -165,8 +165,16 @@ async def main() -> None:
             )
         )
 
-        # 4. Seed initial display
+        # 4. Seed display state immediately so late-joining clients get ride data on connect; then wait for client and re-send
         ctx0 = get_ride_context()
+        await display_server.send_layout("idle", {
+            "route_name": ctx0.route_name,
+            "next_stop": ctx0.next_stop,
+            "eta_seconds": ctx0.eta_seconds,
+            "progress_pct": 0,
+        })
+        await display_server.wait_for_client(timeout=2.0)
+        # Re-send so any client that connected during wait gets ride content before intro
         await display_server.send_layout("idle", {
             "route_name": ctx0.route_name,
             "next_stop": ctx0.next_stop,
@@ -181,7 +189,6 @@ async def main() -> None:
         if alert_path.is_file():
             async with _turn_lock:
                 await play_local_file(alert_path)
-        await display_server.wait_for_client(timeout=2.0)
         echo_guard.register_utterance(intro_text)  # so delayed echo of intro is not treated as user input
         async with _turn_lock:
             await display_server.send_layout("speaking", {"text": intro_text})

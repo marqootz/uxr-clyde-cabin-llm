@@ -11,12 +11,20 @@ from websockets.server import WebSocketServerProtocol
 logger = logging.getLogger(__name__)
 _clients: set[WebSocketServerProtocol] = set()
 _client_connected_event: asyncio.Event | None = None
+_last_layout: str | None = None
+_last_data: dict[str, Any] | None = None
 
 
 async def register(ws: WebSocketServerProtocol) -> None:
     _clients.add(ws)
     if _client_connected_event is not None:
         _client_connected_event.set()
+    # Send current state immediately so new clients get ride data (next_stop, eta) without waiting for the next message
+    if _last_layout is not None and _last_data is not None:
+        try:
+            await ws.send(json.dumps({"layout": _last_layout, "data": _last_data}))
+        except Exception:
+            pass
     logger.info("Display client connected (total=%d)", len(_clients))
 
 
@@ -40,7 +48,10 @@ async def unregister(ws: WebSocketServerProtocol) -> None:
 
 
 async def send_layout(layout: str, data: dict[str, Any]) -> None:
-    """Push a layout and its data to all connected display clients."""
+    """Push a layout and its data to all connected display clients. Stores state for late-joining clients."""
+    global _last_layout, _last_data
+    _last_layout = layout
+    _last_data = data
     msg = json.dumps({"layout": layout, "data": data})
     if not _clients:
         logger.debug("No display clients; message dropped: %s", layout)

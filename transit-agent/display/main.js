@@ -22,8 +22,7 @@ function formatEta(seconds) {
 
 // ─── Ride progress (center — always on) ──────────────────────────────────────
 
-function updateRideProgress({ route_name, next_stop, eta_seconds, progress_pct } = {}) {
-  document.getElementById('route-name').textContent = route_name || '—';
+function updateRideProgress({ next_stop, eta_seconds, progress_pct } = {}) {
   document.getElementById('next-stop').textContent  = next_stop  || '—';
   document.getElementById('eta-badge').textContent  = formatEta(eta_seconds);
 
@@ -35,13 +34,26 @@ function updateRideProgress({ route_name, next_stop, eta_seconds, progress_pct }
 // ─── Feedback container (presence circle + response content) ───────────────────
 
 const feedbackContainer = document.getElementById('feedback-container');
+const feedbackContent   = document.getElementById('feedback-content');
 const feedbackMedia     = document.getElementById('feedback-media');
 const infoSpeaking      = document.getElementById('info-speaking');
 const infoPrimary       = document.getElementById('info-card-primary');
 const infoSecondary     = document.getElementById('info-card-secondary');
 
-function expandFeedback() { feedbackContainer.classList.add('expanded'); }
-function collapseFeedback() { feedbackContainer.classList.remove('expanded'); }
+function expandFeedback() {
+  feedbackContent.classList.remove('fade-out');
+  feedbackContainer.classList.add('expanded');
+}
+function collapseFeedback() {
+  if (!feedbackContainer.classList.contains('expanded')) return;
+  feedbackContent.classList.add('fade-out');
+  function onFadeOut(e) {
+    if (e.propertyName !== 'opacity') return;
+    feedbackContainer.classList.remove('expanded');
+    feedbackContent.classList.remove('fade-out');
+  }
+  feedbackContent.addEventListener('transitionend', onFadeOut, { once: true });
+}
 
 function setFeedbackMedia({ image_url, video_url } = {}) {
   feedbackMedia.innerHTML = '';
@@ -75,7 +87,13 @@ function startTypeout(text) {
   const words = (text || '').trim().split(/\s+/).filter(Boolean);
   p.textContent = '';
   if (!words.length) return;
-  p.textContent = words[0];
+  function appendWord(word) {
+    const span = document.createElement('span');
+    span.className = 'word';
+    span.textContent = word;
+    p.appendChild(span);
+  }
+  appendWord(words[0]);
   let i = 1;
   const stepMs = 200;
   typeoutTimer = setInterval(() => {
@@ -83,7 +101,8 @@ function startTypeout(text) {
       cancelTypeout();
       return;
     }
-    p.textContent += ' ' + words[i];
+    p.appendChild(document.createTextNode(' '));
+    appendWord(words[i]);
     i += 1;
   }, stepMs);
 }
@@ -143,7 +162,7 @@ window.addEventListener('display-update', (e) => {
   window.presenceLayer?.setSpeaking(layout === 'speaking');
 
   // Always refresh ride progress when the backend includes it
-  if (data.route_name != null || data.next_stop != null || data.progress_pct != null) {
+  if (data.next_stop != null || data.progress_pct != null) {
     updateRideProgress(data);
   }
 
@@ -186,4 +205,4 @@ window.addEventListener('display-update', (e) => {
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
-updateRideProgress({ route_name: '—', next_stop: '—', eta_seconds: null, progress_pct: 0 });
+updateRideProgress({ next_stop: '—', eta_seconds: null, progress_pct: 0 });

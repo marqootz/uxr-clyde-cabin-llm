@@ -18,6 +18,7 @@
       font-family: system-ui, -apple-system, sans-serif;
       background: #000; color: #fff;
       display: flex;
+      position: relative;
     }
 
     /* ── CENTER: ride progress — always visible, fills all non-info space ── */
@@ -82,14 +83,6 @@
       z-index: 1;
     }
 
-    /* Info cards (inside feedback-content) */
-    #info-speaking { display: none; }
-    #info-speaking p {
-      font-size: 24px;
-      line-height: 1.6;
-      opacity: 0.92;
-    }
-
     /* Info cards */
     .info-card {
       background: rgba(255, 255, 255, 0.07);
@@ -119,13 +112,13 @@
     /* ── Feedback context container: presence circle + response content ── */
     #feedback-container {
       flex-shrink: 0;
+      align-self: stretch;
       display: flex;
       flex-direction: row-reverse;
       align-items: flex-end;
       gap: 16px;
       padding: 22px 22px 22px 0;
       border-left: 1px solid rgba(255, 255, 255, 0.08);
-      overflow: hidden;
       transition: border-color 0.4s ease;
     }
     #feedback-container.expanded {
@@ -154,9 +147,10 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      justify-content: flex-end;
       align-items: flex-end;
-      gap: 12px;
+      align-self: stretch;
+      position: relative;
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.4s ease;
@@ -167,39 +161,10 @@
       max-width: 280px;
       opacity: 1;
       pointer-events: auto;
+      padding-bottom: 24px;
     }
     #feedback-container.expanded #feedback-content.fade-out {
       opacity: 0;
-    }
-
-    /* Fade in each word as it appears (left to right); longer duration */
-    #info-speaking-p .word {
-      display: inline;
-      opacity: 0;
-      animation: wordFadeIn 0.5s ease forwards;
-    }
-    @keyframes wordFadeIn {
-      to { opacity: 1; }
-    }
-    #feedback-container.expanded #info-speaking {
-      display: block !important;
-      width: 100%;
-      text-align: right;
-    }
-    #info-speaking-p {
-      direction: ltr;
-      text-align: left;
-      margin-left: auto;
-      max-height: calc(4 * 1.6em);
-      overflow: hidden;
-    }
-
-    /* Agent speech transcript */
-    #info-speaking { display: none; }
-    #info-speaking p {
-      font-size: 24px;
-      line-height: 1.6;
-      opacity: 0.92;
     }
 
     /* Media area for image/video (optional) */
@@ -217,6 +182,43 @@
       object-fit: contain;
     }
     #feedback-media:empty { display: none; }
+
+    /* ── Transcript reveal: contained within #feedback-content (position: relative) ── */
+    #transcript-reveal-text {
+      display: none;
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      padding: 0 24px;
+      font-size: 24px;
+      line-height: 1.6;
+      color: #fff;
+      text-align: left;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      box-sizing: border-box;
+      will-change: transform;
+      z-index: 0;
+    }
+    #text-reveal-gradient {
+      display: none;
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 1) 0%,
+        rgba(0, 0, 0, 1) 6.25%,
+        rgba(0, 0, 0, 0.48) 66.5%,
+        rgba(0, 0, 0, 0) 69%,
+        rgba(0, 0, 0, 0) 88.4%,
+        rgba(0, 0, 0, 0.48) 91%,
+        rgba(0, 0, 0, 1) 97.6%,
+        rgba(0, 0, 0, 1) 100%
+      );
+    }
   </style>
 </head>
 <body>
@@ -237,10 +239,9 @@
   <div id="feedback-container">
     <button id="presence-circle" title="Presence"></button>
     <div id="feedback-content">
+      <div id="transcript-reveal-text" aria-hidden="true"></div>
+      <div id="text-reveal-gradient"></div>
       <div id="feedback-media"></div>
-      <div id="info-speaking">
-        <p id="info-speaking-p"></p>
-      </div>
       <div id="info-card-primary" class="info-card" style="display:none">
         <div id="info-label"  class="info-card-label">Status</div>
         <div id="info-value"  class="info-card-value">—</div>

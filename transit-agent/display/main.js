@@ -32,12 +32,13 @@ function updateRideProgress({ next_stop, eta_seconds, progress_pct } = {}) {
 
 // ─── Feedback container (presence circle + response content) ───────────────────
 
-const feedbackContainer = document.getElementById('feedback-container');
-const feedbackContent   = document.getElementById('feedback-content');
-const feedbackMedia     = document.getElementById('feedback-media');
-const infoSpeaking      = document.getElementById('info-speaking');
-const infoPrimary       = document.getElementById('info-card-primary');
-const infoSecondary     = document.getElementById('info-card-secondary');
+const feedbackContainer  = document.getElementById('feedback-container');
+const feedbackContent    = document.getElementById('feedback-content');
+const feedbackMedia      = document.getElementById('feedback-media');
+const transcriptText     = document.getElementById('transcript-reveal-text');
+const transcriptGradient = document.getElementById('text-reveal-gradient');
+const infoPrimary        = document.getElementById('info-card-primary');
+const infoSecondary      = document.getElementById('info-card-secondary');
 
 function expandFeedback() {
   feedbackContent.classList.remove('fade-out');
@@ -79,71 +80,109 @@ function cancelTypeout() {
   }
 }
 
-const SPEAKING_MAX_LINES = 4;
+/** Transcript reveal: scroll speed (match TTS). Optional word timestamps from TTS for precise sync. */
+const TRANSCRIPT_REVEAL_WORDS_PER_MINUTE = 150;
+const TRANSCRIPT_REVEAL_WINDOW_BOTTOM_PCT = 0.884;  /* 88.4% — first line enters here */
+const TRANSCRIPT_REVEAL_LINE_HEIGHT_PX = 24 * 1.6;
 
-function trimToMaxLines(p) {
-  if (!p || !p.firstChild) return;
-  const style = getComputedStyle(p);
-  const lineHeight = parseFloat(style.lineHeight) || 24 * 1.6;
-  const maxHeight = SPEAKING_MAX_LINES * lineHeight;
-  while (p.scrollHeight > maxHeight && p.firstChild) {
-    p.removeChild(p.firstChild);
-    if (p.firstChild && p.firstChild.nodeType === Node.TEXT_NODE) {
-      p.removeChild(p.firstChild);
-    }
+let transcriptRevealRafId = null;
+
+/** Stop transcript reveal animation and hide text + gradient. */
+function cancelTranscriptReveal() {
+  if (transcriptRevealRafId != null) {
+    cancelAnimationFrame(transcriptRevealRafId);
+    transcriptRevealRafId = null;
   }
+  if (transcriptText)     { transcriptText.style.display = 'none'; transcriptText.setAttribute('aria-hidden', 'true'); }
+  if (transcriptGradient) { transcriptGradient.style.display = 'none'; }
 }
 
-function startTypeout(text) {
+/**
+ * Transcript reveal: full block scrolls up through a fixed gradient window.
+ * @param {string} text - Full transcript
+ * @param {{ wordTimestamps?: Array<{ start: number, end: number }> }} [options] - Optional TTS word timestamps (seconds) for precise scroll
+ */
+function startTranscriptReveal(text, options = {}) {
+  cancelTranscriptReveal();
   cancelTypeout();
-  const p = document.getElementById('info-speaking-p');
-  if (!p) return;
-  const words = (text || '').trim().split(/\s+/).filter(Boolean);
-  p.textContent = '';
-  if (!words.length) return;
-  function appendWord(word) {
-    const span = document.createElement('span');
-    span.className = 'word';
-    span.textContent = word;
-    p.appendChild(span);
-    window.presenceLayer?.setWord(word);
-  }
-  appendWord(words[0]);
-  trimToMaxLines(p);
-  let i = 1;
-  const stepMs = 200;
-  typeoutTimer = setInterval(() => {
-    if (i >= words.length) {
-      cancelTypeout();
-      return;
+  const s = (text || '').trim();
+  if (!s) return;
+
+  const textEl = transcriptText;
+  const gradEl = transcriptGradient;
+  if (!textEl || !feedbackContent) return;
+
+  textEl.textContent = s;
+  textEl.style.display = 'block';
+  textEl.setAttribute('aria-hidden', 'false');
+  if (gradEl) gradEl.style.display = 'block';
+
+  const wordCount = s.split(/\s+/).filter(Boolean).length;
+  const wordTimestamps = options.wordTimestamps;
+
+  const H = feedbackContent.clientHeight || 360;
+  const initialY = TRANSCRIPT_REVEAL_WINDOW_BOTTOM_PCT * H - TRANSCRIPT_REVEAL_LINE_HEIGHT_PX;
+  textEl.style.transition = 'none';
+  textEl.style.transform = `translateY(${initialY}px)`;
+  textEl.offsetHeight;
+
+  const textHeight = textEl.offsetHeight;
+
+  // Align last line bottom with progress bar bottom, measured in feedbackContent-local coords.
+  // feedbackContent starts 22px from viewport top (feedback-container padding);
+  // progress bar bottom is 24px from viewport bottom — so the target differs from H by that delta.
+  const feedbackTop     = feedbackContent.getBoundingClientRect().top;
+  const progressTrackEl = document.getElementById('progress-track');
+  const progressBottom  = progressTrackEl
+    ? progressTrackEl.getBoundingClientRect().bottom
+    : feedbackTop + H;
+  const finalY = (progressBottom - feedbackTop) - textHeight;
+
+  let durationMs;
+  if (Array.isArray(wordTimestamps) && wordTimestamps.length > 0) {
+    const first = wordTimestamps[0];
+    const last = wordTimestamps[wordTimestamps.length - 1];
+    if (typeof first === 'object' && first != null && typeof last === 'object' && last != null && 'start' in first && 'end' in last) {
+      durationMs = (last.end - first.start) * 1000;
+    } else {
+      durationMs = (wordCount / TRANSCRIPT_REVEAL_WORDS_PER_MINUTE) * 60 * 1000;
     }
-    p.appendChild(document.createTextNode(' '));
-    appendWord(words[i]);
-    i += 1;
-    trimToMaxLines(p);
-  }, stepMs);
+  } else {
+    durationMs = (wordCount / TRANSCRIPT_REVEAL_WORDS_PER_MINUTE) * 60 * 1000;
+  }
+
+  const startTime = performance.now();
+
+  function tick(now) {
+    const elapsed = now - startTime;
+    const progress = durationMs <= 0 ? 1 : Math.min(elapsed / durationMs, 1);
+    const y = (1 - progress) * initialY + progress * finalY;
+    textEl.style.transform = `translateY(${y}px)`;
+    if (progress < 1) {
+      transcriptRevealRafId = requestAnimationFrame(tick);
+    } else {
+      transcriptRevealRafId = null;
+    }
+  }
+
+  transcriptRevealRafId = requestAnimationFrame(tick);
 }
 
-/** Show the speaking-text section; hide info cards. Optional image/video in data. */
+/** Show the speaking-text section; hide info cards. Uses transcript reveal (gradient + scroll). */
 function showSpeaking(text, data = {}) {
   setFeedbackMedia(data);
   infoPrimary.style.display   = 'none';
   infoSecondary.style.display = 'none';
   expandFeedback();
-  infoSpeaking.style.display = 'block';
-  const p = document.getElementById('info-speaking-p');
-  if (p) {
-    const s = (text || '').trim();
-    p.textContent = s;
-    if (s) startTypeout(s);
-  }
+  const s = (text || '').trim();
+  if (s) startTranscriptReveal(s, { wordTimestamps: data.word_timestamps });
 }
 
 /** Show info card(s); hide speaking text. Optional image/video in data. */
 function showInfoCard({ label, value, detail, walk_time, image_url, video_url } = {}) {
   setFeedbackMedia({ image_url, video_url });
   cancelTypeout();
-  infoSpeaking.style.display = 'none';
+  cancelTranscriptReveal();
 
   if (value != null) {
     document.getElementById('info-label').textContent  = label  || 'Info';
@@ -186,8 +225,8 @@ window.addEventListener('display-update', (e) => {
   switch (layout) {
 
     case 'idle':
-      // Center stays as-is; feedback container collapses (circle stays visible)
       cancelTypeout();
+      cancelTranscriptReveal();
       collapseFeedback();
       break;
 

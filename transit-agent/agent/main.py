@@ -9,6 +9,7 @@ from pathlib import Path
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import anthropic
 import config
 from agent.audio_input import transcript_generator
 from agent.audio_output import play_local_file, speak
@@ -228,16 +229,34 @@ async def main() -> None:
                 pass
 
             async with _turn_lock:
-                text, conversation = await run_turn(
-                    transcript, ctx, offers_made_shared, conversation,
-                    on_immediate_ack=_speak_immediate_ack,
-                )
-                if text:
-                    logger.info("Speaking: %s", text[:80] + "..." if len(text) > 80 else text)
-                    await display_server.send_layout("speaking", {"text": text})
-                    await speak(text)
-                else:
-                    logger.warning("No response text to speak")
+                try:
+                    text, conversation = await run_turn(
+                        transcript, ctx, offers_made_shared, conversation,
+                        on_immediate_ack=_speak_immediate_ack,
+                    )
+                    if text:
+                        logger.info("Speaking: %s", text[:80] + "..." if len(text) > 80 else text)
+                        await display_server.send_layout("speaking", {"text": text})
+                        await speak(text)
+                    else:
+                        logger.warning("No response text to speak")
+                except anthropic.BadRequestError as e:
+                    err_msg = str(e)
+                    try:
+                        body = getattr(e, "body", None) or getattr(e, "response", None)
+                        if isinstance(body, dict) and "error" in body:
+                            err_msg = body["error"].get("message", err_msg)
+                    except Exception:
+                        pass
+                    logger.error("Anthropic API error (e.g. low credits): %s", err_msg)
+                    fallback = "I'm having trouble reaching my brain right now. Please try again in a moment."
+                    await display_server.send_layout("speaking", {"text": fallback})
+                    await speak(fallback)
+                except anthropic.APIError as e:
+                    logger.exception("Anthropic API error")
+                    fallback = "Something went wrong on my end. Please try again."
+                    await display_server.send_layout("speaking", {"text": fallback})
+                    await speak(fallback)
                 await display_server.send_layout("idle", {
                     "route_name": ctx.route_name,
                     "next_stop": ctx.next_stop,

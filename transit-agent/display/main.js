@@ -86,15 +86,37 @@ const TRANSCRIPT_REVEAL_WINDOW_BOTTOM_PCT = 0.884;  /* 88.4% — first line ente
 const TRANSCRIPT_REVEAL_LINE_HEIGHT_PX = 24 * 1.6;
 
 let transcriptRevealRafId = null;
+let transcriptFadeTimer   = null;
 
-/** Stop transcript reveal animation and hide text + gradient. */
+/** Cancel RAF + fade timer without touching visibility (used before starting a new reveal). */
+function _clearTranscriptAnimation() {
+  if (transcriptRevealRafId != null) { cancelAnimationFrame(transcriptRevealRafId); transcriptRevealRafId = null; }
+  if (transcriptFadeTimer   != null) { clearTimeout(transcriptFadeTimer);            transcriptFadeTimer   = null; }
+}
+
+/** Stop transcript reveal and fade text + gradient out over 400 ms. */
 function cancelTranscriptReveal() {
-  if (transcriptRevealRafId != null) {
-    cancelAnimationFrame(transcriptRevealRafId);
-    transcriptRevealRafId = null;
+  _clearTranscriptAnimation();
+  if (!transcriptText || transcriptText.style.display === 'none') return;
+
+  transcriptText.style.transition = 'opacity 0.4s ease';
+  transcriptText.style.opacity    = '0';
+  if (transcriptGradient) {
+    transcriptGradient.style.transition = 'opacity 0.4s ease';
+    transcriptGradient.style.opacity    = '0';
   }
-  if (transcriptText)     { transcriptText.style.display = 'none'; transcriptText.setAttribute('aria-hidden', 'true'); }
-  if (transcriptGradient) { transcriptGradient.style.display = 'none'; }
+  transcriptFadeTimer = setTimeout(() => {
+    transcriptFadeTimer = null;
+    transcriptText.style.display    = 'none';
+    transcriptText.style.opacity    = '';
+    transcriptText.style.transition = '';
+    transcriptText.setAttribute('aria-hidden', 'true');
+    if (transcriptGradient) {
+      transcriptGradient.style.display    = 'none';
+      transcriptGradient.style.opacity    = '';
+      transcriptGradient.style.transition = '';
+    }
+  }, 400);
 }
 
 /**
@@ -103,7 +125,7 @@ function cancelTranscriptReveal() {
  * @param {{ wordTimestamps?: Array<{ start: number, end: number }> }} [options] - Optional TTS word timestamps (seconds) for precise scroll
  */
 function startTranscriptReveal(text, options = {}) {
-  cancelTranscriptReveal();
+  _clearTranscriptAnimation();  // stop animation + cancel any in-progress fade
   cancelTypeout();
   const s = (text || '').trim();
   if (!s) return;
@@ -111,6 +133,11 @@ function startTranscriptReveal(text, options = {}) {
   const textEl = transcriptText;
   const gradEl = transcriptGradient;
   if (!textEl || !feedbackContent) return;
+
+  // Reset opacity immediately (cancels any in-progress fade)
+  textEl.style.transition = 'none';
+  textEl.style.opacity    = '1';
+  if (gradEl) { gradEl.style.transition = 'none'; gradEl.style.opacity = '1'; }
 
   textEl.textContent = s;
   textEl.style.display = 'block';
@@ -122,7 +149,6 @@ function startTranscriptReveal(text, options = {}) {
 
   const H = feedbackContent.clientHeight || 360;
   const initialY = TRANSCRIPT_REVEAL_WINDOW_BOTTOM_PCT * H - TRANSCRIPT_REVEAL_LINE_HEIGHT_PX;
-  textEl.style.transition = 'none';
   textEl.style.transform = `translateY(${initialY}px)`;
   textEl.offsetHeight;
 
@@ -154,9 +180,10 @@ function startTranscriptReveal(text, options = {}) {
   const startTime = performance.now();
 
   function tick(now) {
-    const elapsed = now - startTime;
+    const elapsed  = now - startTime;
     const progress = durationMs <= 0 ? 1 : Math.min(elapsed / durationMs, 1);
-    const y = (1 - progress) * initialY + progress * finalY;
+    const eased    = 1 - Math.pow(1 - progress, 3);  // cubic ease-out
+    const y        = initialY + eased * (finalY - initialY);
     textEl.style.transform = `translateY(${y}px)`;
     if (progress < 1) {
       transcriptRevealRafId = requestAnimationFrame(tick);

@@ -67,7 +67,6 @@
       height: 40px;
       background: rgba(255, 255, 255, 0.64);
       border-radius: 20px;
-      transition: width 0.5s ease;
       z-index: 0;
     }
     .progress-knob {
@@ -78,7 +77,6 @@
       border-radius: 50%;
       background: #fff;
       left: calc(var(--pct) * (100% - 40px));
-      transition: --pct 0.5s ease;
       will-change: left;
       z-index: 1;
     }
@@ -140,7 +138,7 @@
       transition: none; /* no smoothing — scale must track level immediately */
     }
 
-    /* Response content — visible when expanded; fixed width immediately, no grow */
+    /* Response content — visible when expanded; no transition on expand so text doesn't move; collapse animates when .feedback-collapsing */
     #feedback-content {
       flex: 0 0 0;
       min-width: 0;
@@ -165,6 +163,29 @@
       padding-bottom: 24px;
     }
     #feedback-container.expanded #feedback-content.fade-out {
+      opacity: 0;
+    }
+    /* Only when collapsing: animate content shrink + progress bar expansion so bar doesn't snap */
+    body.feedback-collapsing #feedback-content {
+      transition: opacity 0.4s ease, flex-basis 600ms ease-in-out, max-width 600ms ease-in-out;
+    }
+    body.feedback-collapsing .progress-fill {
+      transition: width 600ms ease-in-out;
+    }
+    body.feedback-collapsing .progress-knob {
+      transition: left 600ms ease-in-out;
+    }
+    /* Only when expanding: animate progress bar shrink + content slot growth; content hidden until done */
+    body.feedback-expanding #feedback-content {
+      transition: opacity 0.4s ease, flex-basis 600ms ease-in-out, max-width 600ms ease-in-out;
+    }
+    body.feedback-expanding .progress-fill {
+      transition: width 600ms ease-in-out;
+    }
+    body.feedback-expanding .progress-knob {
+      transition: left 600ms ease-in-out;
+    }
+    body.feedback-expanding #feedback-container.expanded #feedback-content.content-pending {
       opacity: 0;
     }
 

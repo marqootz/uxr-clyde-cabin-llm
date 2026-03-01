@@ -40,19 +40,51 @@ const transcriptGradient = document.getElementById('text-reveal-gradient');
 const infoPrimary        = document.getElementById('info-card-primary');
 const infoSecondary      = document.getElementById('info-card-secondary');
 
-function expandFeedback() {
+let expandTransitionEndListener = null;
+
+function expandFeedback(onExpanded) {
   feedbackContent.classList.remove('fade-out');
-  feedbackContainer.classList.add('expanded');
+  if (expandTransitionEndListener) {
+    feedbackContent.removeEventListener('transitionend', expandTransitionEndListener);
+    expandTransitionEndListener = null;
+  }
+  document.body.classList.add('feedback-expanding');
+  feedbackContent.classList.add('content-pending');
+  requestAnimationFrame(() => {
+    feedbackContainer.classList.add('expanded');
+  });
+
+  expandTransitionEndListener = function onExpandTransitionEnd(e) {
+    if (e.target !== feedbackContent) return;
+    if (e.propertyName !== 'flex-basis' && e.propertyName !== 'max-width') return;
+    document.body.classList.remove('feedback-expanding');
+    feedbackContent.classList.remove('content-pending');
+    feedbackContent.removeEventListener('transitionend', expandTransitionEndListener);
+    expandTransitionEndListener = null;
+    if (typeof onExpanded === 'function') onExpanded();
+  };
+  feedbackContent.addEventListener('transitionend', expandTransitionEndListener);
 }
 function collapseFeedback() {
-  if (!feedbackContainer.classList.contains('expanded')) return;
-  feedbackContent.classList.add('fade-out');
-  function onFadeOut(e) {
-    if (e.propertyName !== 'opacity') return;
-    feedbackContainer.classList.remove('expanded');
-    feedbackContent.classList.remove('fade-out');
+  document.body.classList.remove('feedback-expanding');
+  feedbackContent.classList.remove('content-pending');
+  if (expandTransitionEndListener) {
+    feedbackContent.removeEventListener('transitionend', expandTransitionEndListener);
+    expandTransitionEndListener = null;
   }
-  feedbackContent.addEventListener('transitionend', onFadeOut, { once: true });
+  if (!feedbackContainer.classList.contains('expanded')) return;
+  document.body.classList.add('feedback-collapsing');
+  feedbackContent.classList.add('fade-out');
+  feedbackContainer.classList.remove('expanded');
+  function onTransitionEnd(e) {
+    if (e.target !== feedbackContent) return;
+    if (e.propertyName === 'opacity') feedbackContent.classList.remove('fade-out');
+    if (e.propertyName === 'flex-basis' || e.propertyName === 'max-width') {
+      document.body.classList.remove('feedback-collapsing');
+      feedbackContent.removeEventListener('transitionend', onTransitionEnd);
+    }
+  }
+  feedbackContent.addEventListener('transitionend', onTransitionEnd);
 }
 
 function setFeedbackMedia({ image_url, video_url } = {}) {
@@ -211,11 +243,12 @@ function showSpeaking(text, data = {}) {
   setFeedbackMedia(data);
   infoPrimary.style.display   = 'none';
   infoSecondary.style.display = 'none';
-  expandFeedback();
   const s = (text || '').trim();
-  if (s) startTranscriptReveal(s, { wordTimestamps: data.word_timestamps });
   const wordsWithTimes = buildWordsWithTimestamps(s, data.word_timestamps);
-  window.presenceLayer?.setWordTimestamps(wordsWithTimes);
+  expandFeedback(() => {
+    if (s) startTranscriptReveal(s, { wordTimestamps: data.word_timestamps });
+    window.presenceLayer?.setWordTimestamps(wordsWithTimes);
+  });
 }
 
 /** Show info card(s); hide speaking text. Optional image/video in data. */

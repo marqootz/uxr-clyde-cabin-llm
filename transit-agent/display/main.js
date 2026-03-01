@@ -195,6 +195,17 @@ function startTranscriptReveal(text, options = {}) {
   transcriptRevealRafId = requestAnimationFrame(tick);
 }
 
+/** Build words with timestamps for presence syllable pulse. data.word_timestamps = [{start, end}, ...], text = full sentence. */
+function buildWordsWithTimestamps(text, wordTimestamps) {
+  const words = (text || '').trim().split(/\s+/).filter(Boolean);
+  if (!Array.isArray(wordTimestamps) || wordTimestamps.length !== words.length) return [];
+  return words.map((word, i) => ({
+    start: wordTimestamps[i].start,
+    end: wordTimestamps[i].end,
+    text: word,
+  }));
+}
+
 /** Show the speaking-text section; hide info cards. Uses transcript reveal (gradient + scroll). */
 function showSpeaking(text, data = {}) {
   setFeedbackMedia(data);
@@ -203,6 +214,8 @@ function showSpeaking(text, data = {}) {
   expandFeedback();
   const s = (text || '').trim();
   if (s) startTranscriptReveal(s, { wordTimestamps: data.word_timestamps });
+  const wordsWithTimes = buildWordsWithTimestamps(s, data.word_timestamps);
+  window.presenceLayer?.setWordTimestamps(wordsWithTimes);
 }
 
 /** Show info card(s); hide speaking text. Optional image/video in data. */
@@ -241,8 +254,9 @@ document.getElementById('presence-circle').addEventListener('click', () => {
 window.addEventListener('display-update', (e) => {
   const { layout, data = {} } = e.detail;
 
-  // Keep presence circle aware of speaking state
-  window.presenceLayer?.setSpeaking(layout === 'speaking');
+  // Presence circle: idle | listening | speaking
+  const presenceState = layout === 'speaking' ? 'speaking' : layout === 'listening' ? 'listening' : 'idle';
+  window.presenceLayer?.setState(presenceState);
 
   // Always refresh ride progress when the backend includes it
   if (data.next_stop != null || data.progress_pct != null) {

@@ -109,12 +109,12 @@
       margin-top: 3px;
     }
 
-    /* ── Feedback context container: presence circle + response content ── */
+    /* ── Feedback context container: transcript left, presence circle right ── */
     #feedback-container {
       flex-shrink: 0;
       align-self: stretch;
       display: flex;
-      flex-direction: row-reverse;
+      flex-direction: row;
       align-items: flex-end;
       gap: 16px;
       padding: 22px 22px 22px 0;
@@ -125,18 +125,19 @@
       border-left-color: rgba(255, 255, 255, 0.12);
     }
 
-    /* Presence circle — always visible inside feedback container, always animating */
+    /* Presence circle — min 40px, right of transcript; opacity set by presence.js per state */
     #presence-circle {
       flex-shrink: 0;
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      background: #fff;
+      background: #B851D2;
       border: none;
       cursor: pointer;
       outline: none;
       transform-origin: center center;
       will-change: transform;
+      transition: none; /* no smoothing — scale must track level immediately */
     }
 
     /* Response content — visible when expanded; fixed width immediately, no grow */
@@ -233,9 +234,8 @@
     </div>
   </div>
 
-  <!-- RIGHT: feedback context — presence circle (always visible + animated) and response content (expands when agent responds) -->
+  <!-- RIGHT: feedback context — transcript/content left, presence circle right -->
   <div id="feedback-container">
-    <button id="presence-circle" title="Presence"></button>
     <div id="feedback-content">
       <div id="transcript-reveal-text" aria-hidden="true"></div>
       <div id="text-reveal-gradient"></div>
@@ -250,6 +250,7 @@
         <div id="info-walk" class="info-card-value">—</div>
       </div>
     </div>
+    <button id="presence-circle" title="Presence"></button>
   </div>
 
   <script src="layers/presence.js"></script>

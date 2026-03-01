@@ -47,6 +47,17 @@ async def unregister(ws: WebSocketServerProtocol) -> None:
     logger.info("Display client disconnected (total=%d)", len(_clients))
 
 
+async def broadcast_audio_level(level: float) -> None:
+    """Broadcast audio level (0.0–1.0) to all connected display clients for presence animation."""
+    if not _clients:
+        return
+    msg = json.dumps({"type": "audio_level", "value": level})
+    await asyncio.gather(
+        *[client.send(msg) for client in _clients],
+        return_exceptions=True,
+    )
+
+
 async def send_layout(layout: str, data: dict[str, Any]) -> None:
     """Push a layout and its data to all connected display clients. Stores state for late-joining clients."""
     global _last_layout, _last_data

@@ -112,52 +112,66 @@ function cancelTypeout() {
   }
 }
 
-/** Transcript reveal: scroll speed (match TTS). Optional word timestamps from TTS for precise sync. */
+/** Transcript scroll: duration from ElevenLabs alignment; fallback WPM when absent. */
 const TRANSCRIPT_REVEAL_WORDS_PER_MINUTE = 150;
-const TRANSCRIPT_REVEAL_WINDOW_BOTTOM_PCT = 0.884;  /* 88.4% — first line enters here */
-const TRANSCRIPT_REVEAL_LINE_HEIGHT_PX = 24 * 1.6;
 
-let transcriptRevealRafId = null;
-let transcriptFadeTimer   = null;
+let transcriptFadeTimer = null;
+let transcriptRafId = null;
 
-/** Cancel RAF + fade timer without touching visibility (used before starting a new reveal). */
+/** Cancel fade timer and RAF. */
 function _clearTranscriptAnimation() {
-  if (transcriptRevealRafId != null) { cancelAnimationFrame(transcriptRevealRafId); transcriptRevealRafId = null; }
-  if (transcriptFadeTimer   != null) { clearTimeout(transcriptFadeTimer);            transcriptFadeTimer   = null; }
+  if (transcriptFadeTimer != null) {
+    clearTimeout(transcriptFadeTimer);
+    transcriptFadeTimer = null;
+  }
+  if (transcriptRafId != null) {
+    cancelAnimationFrame(transcriptRafId);
+    transcriptRafId = null;
+  }
 }
 
-/** Stop transcript reveal and fade text + gradient out over 400 ms. */
+/** Reset text block for next utterance. Call after fade-out completes. */
+function resetTranscriptScroll() {
+  if (!transcriptText) return;
+  transcriptText.style.transition = 'none';
+  transcriptText.style.transform = 'translateY(0)';
+  transcriptText.textContent = '';
+}
+
+/** Stop transcript reveal and fade text + gradient out over 400 ms. Reset on completion. */
 function cancelTranscriptReveal() {
   _clearTranscriptAnimation();
   if (!transcriptText || transcriptText.style.display === 'none') return;
 
   transcriptText.style.transition = 'opacity 0.4s ease';
-  transcriptText.style.opacity    = '0';
+  transcriptText.style.opacity = '0';
   if (transcriptGradient) {
     transcriptGradient.style.transition = 'opacity 0.4s ease';
-    transcriptGradient.style.opacity    = '0';
+    transcriptGradient.style.opacity = '0';
   }
   transcriptFadeTimer = setTimeout(() => {
     transcriptFadeTimer = null;
-    transcriptText.style.display    = 'none';
-    transcriptText.style.opacity    = '';
+    transcriptText.style.display = 'none';
+    transcriptText.style.opacity = '';
     transcriptText.style.transition = '';
     transcriptText.setAttribute('aria-hidden', 'true');
     if (transcriptGradient) {
-      transcriptGradient.style.display    = 'none';
-      transcriptGradient.style.opacity    = '';
+      transcriptGradient.style.display = 'none';
+      transcriptGradient.style.opacity = '';
       transcriptGradient.style.transition = '';
     }
-  }, 400);
+    resetTranscriptScroll();
+  }, 450);
 }
 
 /**
- * Transcript reveal: full block scrolls up through a fixed gradient window.
- * @param {string} text - Full transcript
- * @param {{ wordTimestamps?: Array<{ start: number, end: number }> }} [options] - Optional TTS word timestamps (seconds) for precise scroll
+ * Transcript scroll: text block starts at bottom, scrolls up linearly over duration.
+ * Uses CSS transition for GPU-composited motion. Duration from ElevenLabs alignment or WPM fallback.
+ * @param {string} text - Full transcript (must be set before calling so textBlockHeight is correct)
+ * @param {number} [durationMs] - Speech duration in ms from ElevenLabs alignment
  */
-function startTranscriptReveal(text, options = {}) {
-  _clearTranscriptAnimation();  // stop animation + cancel any in-progress fade
+function startTranscriptScroll(text, durationMs) {
+  _clearTranscriptAnimation();
   cancelTypeout();
   const s = (text || '').trim();
   if (!s) return;
@@ -166,9 +180,8 @@ function startTranscriptReveal(text, options = {}) {
   const gradEl = transcriptGradient;
   if (!textEl || !feedbackContent) return;
 
-  // Reset opacity immediately (cancels any in-progress fade)
   textEl.style.transition = 'none';
-  textEl.style.opacity    = '1';
+  textEl.style.opacity = '1';
   if (gradEl) { gradEl.style.transition = 'none'; gradEl.style.opacity = '1'; }
 
   textEl.textContent = s;
@@ -176,55 +189,34 @@ function startTranscriptReveal(text, options = {}) {
   textEl.setAttribute('aria-hidden', 'false');
   if (gradEl) gradEl.style.display = 'block';
 
-  const wordCount = s.split(/\s+/).filter(Boolean).length;
-  const wordTimestamps = options.wordTimestamps;
+  const containerHeight = feedbackContent.getBoundingClientRect().height;
+  textEl.getBoundingClientRect();
+  const textHeight = textEl.getBoundingClientRect().height;
 
-  const H = feedbackContent.clientHeight || 360;
-  const initialY = TRANSCRIPT_REVEAL_WINDOW_BOTTOM_PCT * H - TRANSCRIPT_REVEAL_LINE_HEIGHT_PX;
-  textEl.style.transform = `translateY(${initialY}px)`;
-  textEl.offsetHeight;
+  const startY = containerHeight;
+  const endY = containerHeight - textHeight;
 
-  const textHeight = textEl.offsetHeight;
+  textEl.style.transform = `translateY(${startY}px)`;
+  textEl.getBoundingClientRect();
 
-  // Align last line bottom with progress bar bottom, measured in feedbackContent-local coords.
-  // feedbackContent starts 22px from viewport top (feedback-container padding);
-  // progress bar bottom is 24px from viewport bottom — so the target differs from H by that delta.
-  const feedbackTop     = feedbackContent.getBoundingClientRect().top;
-  const progressTrackEl = document.getElementById('progress-track');
-  const progressBottom  = progressTrackEl
-    ? progressTrackEl.getBoundingClientRect().bottom
-    : feedbackTop + H;
-  const finalY = (progressBottom - feedbackTop) - textHeight;
-
-  let durationMs;
-  if (Array.isArray(wordTimestamps) && wordTimestamps.length > 0) {
-    const first = wordTimestamps[0];
-    const last = wordTimestamps[wordTimestamps.length - 1];
-    if (typeof first === 'object' && first != null && typeof last === 'object' && last != null && 'start' in first && 'end' in last) {
-      durationMs = (last.end - first.start) * 1000;
-    } else {
-      durationMs = (wordCount / TRANSCRIPT_REVEAL_WORDS_PER_MINUTE) * 60 * 1000;
-    }
-  } else {
-    durationMs = (wordCount / TRANSCRIPT_REVEAL_WORDS_PER_MINUTE) * 60 * 1000;
-  }
+  const dur = (typeof durationMs === 'number' && durationMs > 0)
+    ? durationMs
+    : (s.split(/\s+/).filter(Boolean).length / TRANSCRIPT_REVEAL_WORDS_PER_MINUTE) * 60 * 1000;
 
   const startTime = performance.now();
 
   function tick(now) {
-    const elapsed  = now - startTime;
-    const progress = durationMs <= 0 ? 1 : Math.min(elapsed / durationMs, 1);
-    const eased    = 1 - Math.pow(1 - progress, 2);  // quadratic ease-out (softer than cubic)
-    const y        = initialY + eased * (finalY - initialY);
+    const elapsed = now - startTime;
+    const progress = dur <= 0 ? 1 : Math.min(elapsed / dur, 1);
+    const y = startY + progress * (endY - startY);
     textEl.style.transform = `translateY(${y}px)`;
     if (progress < 1) {
-      transcriptRevealRafId = requestAnimationFrame(tick);
+      transcriptRafId = requestAnimationFrame(tick);
     } else {
-      transcriptRevealRafId = null;
+      transcriptRafId = null;
     }
   }
-
-  transcriptRevealRafId = requestAnimationFrame(tick);
+  transcriptRafId = requestAnimationFrame(tick);
 }
 
 /** Build words with timestamps for presence syllable pulse. data.word_timestamps = [{start, end}, ...], text = full sentence. */
@@ -238,15 +230,17 @@ function buildWordsWithTimestamps(text, wordTimestamps) {
   }));
 }
 
-/** Show the speaking-text section; hide info cards. Uses transcript reveal (gradient + scroll). */
+/** Show the speaking-text section; hide info cards. Uses transcript scroll (gradient + CSS transition). */
 function showSpeaking(text, data = {}) {
   setFeedbackMedia(data);
-  infoPrimary.style.display   = 'none';
+  infoPrimary.style.display = 'none';
   infoSecondary.style.display = 'none';
   const s = (text || '').trim();
   const wordsWithTimes = buildWordsWithTimestamps(s, data.word_timestamps);
   expandFeedback(() => {
-    if (s) startTranscriptReveal(s, { wordTimestamps: data.word_timestamps });
+    if (s) {
+      startTranscriptScroll(s, data.duration_ms);
+    }
     window.presenceLayer?.setWordTimestamps(wordsWithTimes);
   });
 }

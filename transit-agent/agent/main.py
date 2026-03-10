@@ -88,7 +88,6 @@ def _mark_transcript_processed(transcript: str) -> None:
 async def _speak_immediate_ack(ack_text: str) -> None:
     """Register ack with echo guard, update display, and speak so user knows they were heard."""
     echo_guard.register_utterance(ack_text)
-    await display_server.send_layout("speaking", {"text": ack_text})
     await speak(ack_text)
 
 
@@ -103,7 +102,6 @@ async def on_proactive_trigger(trigger_key: str, user_message: str) -> None:
             on_immediate_ack=_speak_immediate_ack,
         )
         if text:
-            await display_server.send_layout("speaking", {"text": text})
             await speak(text)
         await display_server.send_layout("idle", ctx.cabin.to_dict())
         _last_turn_end_time = time.monotonic()
@@ -209,7 +207,6 @@ async def main() -> None:
                 await play_local_file(alert_path)
         echo_guard.register_utterance(intro_text)  # so delayed echo of intro is not treated as user input
         async with _turn_lock:
-            await display_server.send_layout("speaking", {"text": intro_text})
             await speak(intro_text)
             _last_turn_end_time = time.monotonic()
         offered.add("boarding")
@@ -253,7 +250,6 @@ async def main() -> None:
                     )
                     if text:
                         logger.info("Speaking: %s", text[:80] + "..." if len(text) > 80 else text)
-                        await display_server.send_layout("speaking", {"text": text})
                         await speak(text)
                     else:
                         logger.warning("No response text to speak")
@@ -267,12 +263,10 @@ async def main() -> None:
                         pass
                     logger.error("Anthropic API error (e.g. low credits): %s", err_msg)
                     fallback = "I'm having trouble reaching my brain right now. Please try again in a moment."
-                    await display_server.send_layout("speaking", {"text": fallback})
                     await speak(fallback)
                 except anthropic.APIError as e:
                     logger.exception("Anthropic API error")
                     fallback = "Something went wrong on my end. Please try again."
-                    await display_server.send_layout("speaking", {"text": fallback})
                     await speak(fallback)
                 await display_server.send_layout("idle", {
                     "route_name": ctx.route_name,

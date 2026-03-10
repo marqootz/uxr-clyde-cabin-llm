@@ -57,54 +57,92 @@ def _normalize_for_tts(text: str) -> str:
     return t if t else text.strip()
 
 
-async def _play_elevenlabs(text: str) -> None:
-    """Stream TTS from ElevenLabs and play (blocking in executor or async)."""
+def _duration_ms_from_alignment(alignment: dict | None) -> int | None:
+    """Extract speech duration in ms from ElevenLabs alignment (character_end_times_seconds)."""
+    if not alignment:
+        return None
+    ends = alignment.get("character_end_times_seconds") or alignment.get("character_end_times")
+    if not ends:
+        return None
+    try:
+        return int(ends[-1] * 1000)
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
+async def _fetch_elevenlabs_with_timestamps(text: str) -> tuple[bytes, int | None]:
+    """Fetch TTS from ElevenLabs with-timestamps endpoint. Returns (audio_bytes, duration_ms or None)."""
     if not config.ELEVENLABS_API_KEY or not config.ELEVENLABS_VOICE_ID:
         raise RuntimeError("ElevenLabs API key or voice ID not set")
+    import base64
+    import httpx
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}/with-timestamps"
+    headers = {
+        "xi-api-key": config.ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "text": text,
+        "model_id": "eleven_monolingual_v1",
+        "apply_text_normalization": "auto",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.post(url, json=payload, headers=headers)
+        r.raise_for_status()
+        data = r.json()
+    audio_b64 = data.get("audio_base64")
+    if not audio_b64:
+        raise RuntimeError("ElevenLabs with-timestamps returned no audio_base64")
+    audio_bytes = base64.b64decode(audio_b64)
+    alignment = data.get("alignment") or data.get("normalized_alignment")
+    duration_ms = _duration_ms_from_alignment(alignment)
+    return (audio_bytes, duration_ms)
+
+
+async def _fetch_elevenlabs_fallback(text: str) -> tuple[bytes, int | None]:
+    """Fallback: regular TTS endpoint when with-timestamps fails. Returns (audio_bytes, None)."""
+    if not config.ELEVENLABS_API_KEY or not config.ELEVENLABS_VOICE_ID:
+        raise RuntimeError("ElevenLabs API key or voice ID not set")
+    import httpx
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}"
+    headers = {
+        "xi-api-key": config.ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.post(url, json={"text": text, "model_id": "eleven_monolingual_v1"}, headers=headers)
+        r.raise_for_status()
+        return (r.content, None)
+
+
+async def _play_audio_bytes(audio_bytes: bytes) -> None:
+    """Play audio bytes (mp3). Uses pygame or afplay fallback."""
     try:
-        import httpx
-        url = "https://api.elevenlabs.io/v1/text-to-speech/" + config.ELEVENLABS_VOICE_ID
-        headers = {
-            "xi-api-key": config.ELEVENLABS_API_KEY,
-            "Content-Type": "application/json",
-            "Accept": "audio/mpeg",
-        }
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.post(url, json={"text": text, "model_id": "eleven_monolingual_v1"}, headers=headers)
-            r.raise_for_status()
-            audio_bytes = r.content
-        # Play with a simple player (e.g. pygame or subprocess aplay/mpg123)
+        import pygame
+        pygame.mixer.init(frequency=22050, size=-16, channels=1)
+        snd = pygame.mixer.Sound(buffer=audio_bytes)
+        snd.play()
+        while pygame.mixer.get_busy():
+            await asyncio.sleep(0.1)
+    except ImportError:
+        import os
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            f.write(audio_bytes)
+            path = f.name
         try:
-            import pygame
-            pygame.mixer.init(frequency=22050, size=-16, channels=1)
-            import io
-            snd = pygame.mixer.Sound(buffer=audio_bytes)
-            snd.play()
-            while pygame.mixer.get_busy():
-                await asyncio.sleep(0.1)
-        except ImportError:
-            # Fallback: write to temp file and play with afplay (macOS) or aplay
-            import tempfile
-            import subprocess
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                f.write(audio_bytes)
-                path = f.name
+            proc = await asyncio.create_subprocess_exec(
+                "afplay", path,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+        finally:
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    "afplay", path,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-                await proc.wait()
-            finally:
-                import os
-                try:
-                    os.unlink(path)
-                except Exception:
-                    pass
-    except Exception as e:
-        logger.exception("ElevenLabs TTS failed: %s", e)
-        raise
+                os.unlink(path)
+            except Exception:
+                pass
 
 
 def _play_pyttsx3(text: str) -> None:
@@ -176,8 +214,17 @@ async def _speaker_loop() -> None:
         level_task = asyncio.create_task(_emit_audio_level_envelope(stop_level_event))
         try:
             if config.USE_ELEVENLABS:
-                await _play_elevenlabs(text)
+                try:
+                    audio_bytes, duration_ms = await _fetch_elevenlabs_with_timestamps(text)
+                except Exception:
+                    audio_bytes, duration_ms = await _fetch_elevenlabs_fallback(text)
+                data: dict[str, object] = {"text": text}
+                if duration_ms is not None:
+                    data["duration_ms"] = duration_ms
+                await display_server.send_layout("speaking", data)
+                await _play_audio_bytes(audio_bytes)
             else:
+                await display_server.send_layout("speaking", {"text": text})
                 await loop.run_in_executor(None, _play_pyttsx3, text)
         except Exception as e:
             logger.exception("TTS playback failed: %s", e)

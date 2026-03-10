@@ -1,5 +1,7 @@
 """TTS playback. ElevenLabs primary; pyttsx3 fallback. Non-blocking via separate task."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import math

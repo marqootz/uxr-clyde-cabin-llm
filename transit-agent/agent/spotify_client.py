@@ -2,6 +2,8 @@
 Optional: set SPOTIFY_OUTPUT_DEVICE_NAME and install switchaudio-osx (brew install switchaudio-osx)
 to route Spotify (cabin tab) audio to the same speakers as the agent. See SPOTIFY_INTEGRATION.md."""
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import logging

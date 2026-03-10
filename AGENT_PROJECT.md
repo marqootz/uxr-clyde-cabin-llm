@@ -2,7 +2,7 @@
 
 ## Overview
 
-Voice-first LLM agent for a small autonomous public transit vehicle. The only user input is audio (microphone). Output channels are speech (TTS), a 1080×360 display (browser-based), and mock vehicle API calls controlling lights, climate, and audio.
+Voice-first LLM agent for a small autonomous public transit vehicle. The only user input is audio (microphone). Output channels are speech (TTS), a 1920×360 display (browser-based), and mock vehicle API calls controlling lights, climate, and audio.
 
 The agent is proactive — it uses ride context to offer help at key moments rather than waiting for users to discover capabilities. Tone is calm, brief, co-pilot — not a smart speaker.
 
@@ -17,7 +17,7 @@ The agent is proactive — it uses ride context to offer help at key moments rat
 | STT | `faster-whisper` | Local Whisper inference |
 | VAD | `silero-vad` via `torch` | Continuous mic monitoring |
 | TTS | ElevenLabs API | `pyttsx3` as offline fallback |
-| Display | Electron / Chromium fullscreen | 1080×360, WebSocket-driven |
+| Display | Electron / Chromium fullscreen | 1920×360 content in 1920×1080 viewport, WebSocket-driven |
 | Mock Vehicle API | FastAPI on `localhost:8001` | Simulates cabin hardware |
 
 ---
@@ -37,7 +37,7 @@ transit-agent/
 │   ├── server.py          # FastAPI mock server
 │   └── state.py           # In-memory cabin state
 ├── display/
-│   ├── index.html         # 1080×360 UI
+│   ├── index.html         # 1920×360 UI
 │   ├── main.js            # Electron entry
 │   └── ws_client.js       # WebSocket client
 ├── config.py              # API keys, device settings, feature flags
@@ -156,7 +156,7 @@ Triggers inject their message directly into the LLM turn as a `[PROACTIVE]` pref
 
 ### `display/index.html` — Display UI
 
-1080×360 fullscreen. Receives JSON over WebSocket from Python backend.
+1920×360 content strip in 1920×1080 viewport. Receives JSON over WebSocket from Python backend.
 
 **Layouts:**
 

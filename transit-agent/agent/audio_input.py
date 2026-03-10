@@ -1,5 +1,7 @@
 """VAD + Whisper STT pipeline. Continuous mic capture, speech boundaries, async transcript stream. Gated by echo_guard."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time

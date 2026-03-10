@@ -1,5 +1,9 @@
 """FastAPI mock vehicle API — lights, climate, audio. All state in-memory."""
 
+from __future__ import annotations
+
+from typing import Optional
+
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -24,7 +28,7 @@ class ClimateBody(BaseModel):
 
 class AudioBody(BaseModel):
     action: str
-    genre: str | None = None
+    genre: Optional[str] = None
 
 
 # --- Endpoints ---
@@ -58,7 +62,7 @@ def set_audio(body: AudioBody) -> dict:
     return state.to_dict()
 
 
-def run(port: int | None = None) -> None:
+def run(port: Optional[int] = None) -> None:
     import os
     port = port or int(os.environ.get("VEHICLE_API_PORT", "8001"))
     uvicorn.run(app, host="127.0.0.1", port=port)

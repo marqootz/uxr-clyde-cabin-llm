@@ -1,6 +1,6 @@
 # Transit Cabin Agent
 
-Voice-first LLM agent for in-cabin control of a small autonomous public transit vehicle. Input is microphone only; output is speech (TTS), a 1080×360 display, and mock vehicle API (lights, climate, audio). The agent is proactive and uses ride context to offer help at key moments.
+Voice-first LLM agent for in-cabin control of a small autonomous public transit vehicle. Input is microphone only; output is speech (TTS), a 1920×360 display, and mock vehicle API (lights, climate, audio). The agent is proactive and uses ride context to offer help at key moments.
 
 ## Tech Stack
 
@@ -9,7 +9,7 @@ Voice-first LLM agent for in-cabin control of a small autonomous public transit 
 - **STT**: faster-whisper (local)
 - **VAD**: silero-vad (torch) or energy-based fallback
 - **TTS**: ElevenLabs API (pyttsx3 offline fallback)
-- **Display**: 1080×360 WebSocket-driven UI (open `display/index.html` in browser or Electron)
+- **Display**: 1920×360 WebSocket-driven UI (served at `http://<agent-ip>:3000` for remote cabin clients)
 - **Mock vehicle API**: FastAPI on `localhost:8001`
 
 ## Setup
@@ -26,7 +26,7 @@ cp .env.example .env
 ## Build Order (validation)
 
 1. **Mock vehicle API** — from repo root: `python -m vehicle_api.server` then `curl http://127.0.0.1:8001/state` and `curl -X POST http://127.0.0.1:8001/lights -H "Content-Type: application/json" -d '{"brightness":50,"color_temp":"warm"}'`
-2. **Display** — open `display/index.html` in a browser (WS connects to `ws://localhost:8765`). Start the agent to run the WebSocket server, or run a minimal WS server to test layout switching.
+2. **Display** — agent serves display at `http://localhost:3000`. Open in a browser (local) or on a remote cabin at `http://<agent-ip>:3000`. WebSocket connects to agent host on port 8765.
 3. **VAD + Whisper** — run agent; speak into mic; transcripts should log.
 4. **Claude + tools** — ensure `ANTHROPIC_API_KEY` is set; say "turn down the lights" and confirm tool calls and API updates.
 5. **TTS** — confirm agent speech plays (ElevenLabs or pyttsx3).
@@ -42,7 +42,7 @@ PYTHONPATH=. python -m agent.main
 ```
 
 - Vehicle API starts on port 8001.
-- Display WebSocket server on port 8765. Open `display/index.html` in a browser (or Electron in kiosk for 1080×360).
+- Display HTTP server on port 3000, WebSocket on port 8765. Local: open `http://localhost:3000`. Remote cabin: open `http://<agent-ip>:3000` (e.g. Tailscale IP). Browser/Electron fullscreen 1920×1080; content is 1920×360 anchored to bottom (physical display shows only bottom 360px).
 - Microphone is captured continuously; after speech end, transcript is sent to Claude; tool calls run against the mock API; response is spoken and display updated.
 
 ## Weather & music
@@ -53,7 +53,7 @@ PYTHONPATH=. python -m agent.main
 ## Mac → Linux
 
 - Mic device: set `AUDIO_INPUT_DEVICE` / `AUDIO_OUTPUT_DEVICE` in config or env (names differ on macOS vs ALSA).
-- Display: use Chromium `--kiosk` on Linux instead of Electron if needed.
+- Display: use Chromium on Linux cabin. See [CABIN_DISPLAY.md](../CABIN_DISPLAY.md) for full setup. Quick launch: `./scripts/launch_cabin_display.sh [cabin_host] [agent_ip] [monitor]`.
 - TTS: for fully offline Linux, consider Kokoro TTS instead of ElevenLabs; toggle in `config.py`.
 
 ## Tone

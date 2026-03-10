@@ -1,6 +1,10 @@
-"""WebSocket server for the 1080×360 cabin display. Broadcasts layout + data to clients."""
+"""WebSocket server for the 1920×360 cabin display. Broadcasts layout + data to clients."""
+
+from __future__ import annotations
 
 import asyncio
+
+import config
 import json
 import logging
 from typing import Any
@@ -86,7 +90,9 @@ async def handler(ws: WebSocketServerProtocol, path: str | None = None) -> None:
         await unregister(ws)
 
 
-async def run(port: int = 8765) -> None:
-    async with websockets.serve(handler, "127.0.0.1", port, ping_interval=20, ping_timeout=10):
-        logger.info("Display WebSocket server on ws://127.0.0.1:%d", port)
+async def run(port: int | None = None, host: str | None = None) -> None:
+    port = port or config.WS_PORT
+    host = host or config.WS_HOST
+    async with websockets.serve(handler, host, port, ping_interval=20, ping_timeout=10):
+        logger.info("Display WebSocket server on ws://%s:%d", host, port)
         await asyncio.Future()  # run forever

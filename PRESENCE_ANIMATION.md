@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The ambient visual that represents Clyde on the 1080×360 display. Always visible. Responds to agent state and real-time TTS audio amplitude. When a content card is active it retreats to the left third of the display.
+The ambient visual that represents Clyde on the 1920×360 display. Always visible. Responds to agent state and real-time TTS audio amplitude. When a content card is active it retreats to the left third of the display.
 
 ---
 
@@ -363,12 +363,20 @@ window.addEventListener('resize', () => presence.resize())
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  width: 1080px;
-  height: 360px;
+  width: 1920px;
+  min-height: 100vh;
   overflow: hidden;
   background: #0a0a0a;
   font-family: 'Inter', sans-serif;
   color: #ffffff;
+}
+
+#display-strip {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 1920px;
+  height: 360px;
 }
 
 #presence-layer {

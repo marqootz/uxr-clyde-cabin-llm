@@ -1,5 +1,7 @@
 """API keys, device settings, feature flags."""
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
@@ -23,6 +25,8 @@ WHISPER_MODEL: str = os.environ.get("WHISPER_MODEL", "base.en")
 # Ports
 VEHICLE_API_PORT: int = int(os.environ.get("VEHICLE_API_PORT", "8001"))
 WS_PORT: int = int(os.environ.get("WS_PORT", "8765"))
+WS_HOST: str = os.environ.get("WS_HOST", "0.0.0.0")  # 0.0.0.0 for remote cabin clients
+DISPLAY_HTTP_PORT: int = int(os.environ.get("DISPLAY_HTTP_PORT", "3000"))
 
 # TTS: use ElevenLabs if key set, else pyttsx3
 USE_ELEVENLABS: bool = bool(ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID)

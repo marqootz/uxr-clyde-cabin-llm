@@ -1,8 +1,11 @@
 """Async entrypoint: vehicle API, display WS, VAD/STT, proactive loop, LLM turn on each transcript."""
 
 import asyncio
+import http.server
 import logging
+import socketserver
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -144,7 +147,21 @@ async def main() -> None:
             raise RuntimeError("Vehicle API did not start")
 
         # 2. Start WebSocket server for display (background task)
-        ws_task = asyncio.create_task(display_server.run(config.WS_PORT))
+        ws_task = asyncio.create_task(display_server.run())
+
+        # 2a. Start HTTP server for display (so remote cabin can load http://agent-ip:3000)
+        display_dir = transit_agent_root / "display"
+        display_port = config.DISPLAY_HTTP_PORT
+
+        class DisplayHandler(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, request, client_address, server):
+                super().__init__(request, client_address, server, directory=str(display_dir))
+
+        socketserver.TCPServer.allow_reuse_address = True
+        display_httpd = socketserver.TCPServer(("0.0.0.0", display_port), DisplayHandler)
+        display_thread = threading.Thread(target=display_httpd.serve_forever, daemon=True)
+        display_thread.start()
+        logger.info("Display HTTP server on http://0.0.0.0:%d (cabin: http://<agent-ip>:%d)", display_port, display_port)
 
         # 2b. Spotify token server (for display Web Playback SDK) when Spotify is configured
         spotify_token_task = None

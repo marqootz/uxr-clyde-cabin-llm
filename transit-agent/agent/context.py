@@ -1,5 +1,7 @@
 """Ride state model — injected into the LLM on every turn."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from vehicle_api.state import CabinState

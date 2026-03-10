@@ -2,7 +2,7 @@
 
 ## Overview
 
-1080×360 fullscreen browser display driven entirely by WebSocket messages from the Python agent. No user interaction — output only. Two layers run simultaneously:
+1920×360 content strip in a 1920×1080 fullscreen browser, driven entirely by WebSocket messages from the Python agent. The content is anchored to the bottom; physical cabin displays often show only the bottom 360px. No user interaction — output only. Two layers run simultaneously:
 
 1. **Presence layer** — ambient agent animation, always visible, reflects agent state
 2. **Content layer** — cards that appear on top when Clyde surfaces information
@@ -198,37 +198,36 @@ The display lives in a dark cabin — use dark backgrounds, high contrast text, 
 
 ---
 
-## Electron Config (`main.js`)
+## Electron Config (`electron_main.js`)
 
 ```javascript
 const { app, BrowserWindow } = require('electron')
 
 app.whenReady().then(() => {
   const win = new BrowserWindow({
-    width: 1080,
-    height: 360,
+    width: 1920,
+    height: 1080,
     frame: false,
-    fullscreen: false,   // set true for physical display deployment
+    fullscreen: true,
+    kiosk: true,
     backgroundColor: '#0a0a0a',
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
-    }
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
   })
   win.loadFile('index.html')
-  // win.setKiosk(true)  // uncomment for physical deployment
 })
 ```
 
-For Linux deployment replace Electron with:
+For Linux cabin deployment (remote display client), use Chromium and load from the agent:
 ```bash
-chromium-browser --kiosk --window-size=1080,360 --app=http://localhost:3000
+chromium-browser --kiosk --window-size=1920,1080 --app=http://<agent-ip>:3000
 ```
+
+The agent runs on a local machine and serves the display at port 3000. The cabin browser loads `http://<agent-ip>:3000` (e.g. Tailscale IP) and connects to the WebSocket at `ws://<agent-ip>:8765`.
 
 ---
 
 ## Dev Notes
 
-- During development, open `index.html` directly in Chrome at 1080×360 window size — no Electron needed
+- During development, open `http://localhost:3000` (with agent running) or `index.html` directly in Chrome at 1920×1080 window size — no Electron needed
 - Add a `?mock=true` URL param that replays a canned sequence of WebSocket messages for UI testing without the Python agent running
 - Mapbox requires an API key — add `MAPBOX_TOKEN` to `.env` and inject via a build step or inline in `index.html` for prototype

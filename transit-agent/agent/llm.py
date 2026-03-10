@@ -1,5 +1,7 @@
 """Claude agent with vehicle control tools and ride context injection."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging

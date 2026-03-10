@@ -1,6 +1,8 @@
 """Proactive trigger system: evaluate ride context periodically and inject offers at most once per ride.
 Announcements run only when can_run_now() is True so they do not overlap or compete with user responses."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from typing import Callable, Awaitable

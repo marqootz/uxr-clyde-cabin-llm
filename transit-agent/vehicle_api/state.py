@@ -1,6 +1,9 @@
 """In-memory cabin state mirrored by the mock vehicle API."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -18,7 +21,7 @@ class ClimateState:
 @dataclass
 class AudioState:
     action: str = "idle"  # idle | playing | paused
-    genre: str | None = None
+    genre: Optional[str] = None
 
 
 @dataclass

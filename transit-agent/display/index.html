@@ -1,10 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="background:#000">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=1080, height=360" />
+  <meta name="viewport" content="width=1920, height=1080" />
+  <meta name="theme-color" content="#000000" />
   <title>Cabin Display</title>
   <style>
+    @font-face {
+      font-family: 'Circular XX';
+      src: url('fonts/CircularXX-Book.otf') format('opentype');
+      font-weight: 400;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Circular XX';
+      src: url('fonts/CircularXX-Medium.otf') format('opentype');
+      font-weight: 500;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Circular XX';
+      src: url('fonts/CircularXX-Bold.otf') format('opentype');
+      font-weight: 700;
+      font-style: normal;
+    }
     @property --pct {
       syntax: '<number>';
       inherits: true;
@@ -14,11 +33,19 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      width: 1080px; height: 360px; overflow: hidden;
-      font-family: system-ui, -apple-system, sans-serif;
+      width: 1920px; min-height: 100vh; overflow: hidden;
+      font-family: 'Circular XX', system-ui, -apple-system, sans-serif;
       background: #000; color: #fff;
-      display: flex;
       position: relative;
+    }
+
+    /* Content strip: 1920x360 anchored to bottom. Physical display shows only bottom 360px. */
+    #display-strip {
+      position: fixed; bottom: 0; left: 0;
+      width: 1920px; height: 360px;
+      display: flex;
+      overflow: hidden;
+      background: #0a0a0a;
     }
 
     /* ── CENTER: ride progress — always visible, fills all non-info space ── */
@@ -30,9 +57,9 @@
       padding: 24px;
     }
 
-    /* Next stop — the large prominent text */
+    /* Next stop — the large prominent text (scaled for 1920px width) */
     .next-stop {
-      font-size: 124px;
+      font-size: 140px;
       font-weight: 700;
       letter-spacing: -0.02em;
       line-height: 1.05;
@@ -41,9 +68,9 @@
       text-overflow: ellipsis;
     }
 
-    /* ETA — below next-stop */
+    /* ETA — below next-stop (scaled for 1920px width) */
     .eta-badge {
-      font-size: 64px;
+      font-size: 80px;
       opacity: 0.45;
       margin-top: 8px;
     }
@@ -116,11 +143,6 @@
       align-items: flex-end;
       gap: 16px;
       padding: 22px 22px 22px 0;
-      border-left: 1px solid rgba(255, 255, 255, 0.08);
-      transition: border-color 0.4s ease;
-    }
-    #feedback-container.expanded {
-      border-left-color: rgba(255, 255, 255, 0.12);
     }
 
     /* Presence circle — min 40px, right of transcript; opacity set by presence.js per state */
@@ -155,9 +177,9 @@
       transition: opacity 0.4s ease;
     }
     #feedback-container.expanded #feedback-content {
-      flex: 0 0 280px;
-      width: 280px;
-      max-width: 280px;
+      flex: 0 0 380px;
+      width: 380px;
+      max-width: 380px;
       opacity: 1;
       pointer-events: auto;
       padding-bottom: 24px;
@@ -213,7 +235,7 @@
       top: 0;
       width: 100%;
       padding: 0 24px;
-      font-size: 24px;
+      font-size: 36px;
       line-height: 1.6;
       color: #fff;
       text-align: left;
@@ -223,6 +245,17 @@
       will-change: transform;
       z-index: 0;
     }
+    .ws-status {
+      position: absolute;
+      top: 8px;
+      left: 16px;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+      z-index: 100;
+    }
+    .ws-status.error {
+      color: #ff6b6b;
+    }
     #text-reveal-gradient {
       display: none;
       position: absolute;
@@ -231,18 +264,27 @@
       z-index: 1;
       background: linear-gradient(
         to bottom,
-        rgba(0, 0, 0, 1) 0%,
-        rgba(0, 0, 0, 1) 6.25%,
-        rgba(0, 0, 0, 0.48) 66.5%,
-        rgba(0, 0, 0, 0) 97%,
-        rgba(0, 0, 0, 1) 98%,
-        rgba(0, 0, 0, 1) 100%
+        #0a0a0a 0%,
+        #0a0a0a 6.25%,
+        rgba(10, 10, 10, 0.48) 66.5%,
+        rgba(10, 10, 10, 0) 97%,
+        #0a0a0a 98%,
+        #0a0a0a 100%
       );
     }
   </style>
 </head>
-<body>
+<body style="background:#000;color:#fff;margin:0;min-height:100vh">
 
+  <noscript>
+    <div style="position:fixed;bottom:0;left:0;right:0;padding:24px;background:#111;color:#fff;font-size:24px;">
+      Cabin Display — JavaScript required. Enable JS or check console for errors.
+    </div>
+  </noscript>
+
+  <div id="display-strip">
+  <!-- Connection status: visible when WS not connected -->
+  <div id="ws-status" class="ws-status" aria-live="polite"></div>
   <!-- CENTER: ride progress — always visible -->
   <div id="progress-panel">
     <span id="next-stop"  class="next-stop">—</span>
@@ -272,6 +314,7 @@
       </div>
     </div>
     <button id="presence-circle" title="Presence"></button>
+  </div>
   </div>
 
   <script src="layers/presence.js"></script>

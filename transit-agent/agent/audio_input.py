@@ -36,9 +36,11 @@ CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_MS / 1000)
 SILENCE_MS = config.STT_SILENCE_MS  # end of utterance after this much silence
 MIN_UTTERANCE_MS = config.STT_MIN_UTTERANCE_MS
 MAX_UTTERANCE_MS = config.STT_MAX_UTTERANCE_MS
+MIN_SPEECH_START_MS = config.STT_MIN_SPEECH_START_MS
+ENERGY_THRESHOLD = config.STT_ENERGY_THRESHOLD
 
 
-def _energy_vad(samples: np.ndarray, threshold: float = 0.01) -> bool:
+def _energy_vad(samples: np.ndarray, threshold: float = ENERGY_THRESHOLD) -> bool:
     """Simple energy-based voice activity."""
     return float(np.abs(samples).mean()) > threshold
 
@@ -57,19 +59,23 @@ async def transcripts_from_mic_queued(
     _transcript_queue = asyncio.Queue()
     model = WhisperModel(model_name, device=device, compute_type="int8")
     buffer: list[np.ndarray] = []
+    pre_speech_buffer: list[np.ndarray] = []
     silence_frames = 0
+    speech_start_frames = 0
     speech_started = False
     utterance_start_ts = 0.0
     loop = asyncio.get_event_loop()
 
     def audio_callback(indata: np.ndarray, frames: int, time_info, status):
-        nonlocal speech_started, silence_frames, utterance_start_ts
+        nonlocal speech_started, silence_frames, utterance_start_ts, speech_start_frames
         if status:
             logger.debug("Sounddevice: %s", status)
         if echo_guard.is_gated():
             buffer.clear()
+            pre_speech_buffer.clear()
             speech_started = False
             silence_frames = 0
+            speech_start_frames = 0
             utterance_start_ts = 0.0
             return
         chunk = indata.copy().flatten()
@@ -85,41 +91,56 @@ async def transcripts_from_mic_queued(
         else:
             is_speech = _energy_vad(chunk)
 
+        if not speech_started:
+            if is_speech:
+                speech_start_frames += 1
+                pre_speech_buffer.append(chunk)
+                if speech_start_frames * CHUNK_MS >= MIN_SPEECH_START_MS:
+                    speech_started = True
+                    utterance_start_ts = time.monotonic()
+                    silence_frames = 0
+                    buffer.extend(pre_speech_buffer)
+                    pre_speech_buffer.clear()
+            else:
+                pre_speech_buffer.clear()
+                speech_start_frames = 0
+            return
+
+        # speech_started == True
+        buffer.append(chunk)
         if is_speech:
-            if not speech_started:
-                utterance_start_ts = time.monotonic()
-            speech_started = True
             silence_frames = 0
-            buffer.append(chunk)
-        elif speech_started:
-            buffer.append(chunk)
-            silence_frames += 1
-            elapsed_ms = int((time.monotonic() - utterance_start_ts) * 1000) if utterance_start_ts else 0
-            silence_reached = silence_frames * CHUNK_MS >= SILENCE_MS
-            max_reached = elapsed_ms >= MAX_UTTERANCE_MS
-            if silence_reached or max_reached:
-                to_process = np.concatenate(buffer) if buffer else np.array([], dtype=np.float32)
-                buffer.clear()
-                speech_started = False
-                silence_frames = 0
-                utterance_start_ts = 0.0
-                if len(to_process) >= int(MIN_UTTERANCE_MS / 1000 * SAMPLE_RATE):
-                    def run_whisper():
-                        segments, _ = model.transcribe(to_process, language="en", vad_filter=True)
-                        return " ".join(s.text.strip() for s in segments if s.text).strip()
-
-                    def put_result(fut):
-                        try:
-                            text = fut.result()
-                            if text and _transcript_queue is not None:
-                                _transcript_queue.put_nowait((text, time.monotonic()))
-                        except Exception as e:
-                            logger.exception("Whisper failed: %s", e)
-
-                    fut = loop.run_in_executor(_executor, run_whisper)
-                    loop.call_soon_threadsafe(fut.add_done_callback, put_result)
         else:
+            silence_frames += 1
+
+        elapsed_ms = int((time.monotonic() - utterance_start_ts) * 1000) if utterance_start_ts else 0
+        silence_reached = silence_frames * CHUNK_MS >= SILENCE_MS
+        max_reached = elapsed_ms >= MAX_UTTERANCE_MS
+        if silence_reached or max_reached:
+            if max_reached and not silence_reached:
+                logger.info("STT forcing utterance flush at max duration (%d ms)", elapsed_ms)
+            to_process = np.concatenate(buffer) if buffer else np.array([], dtype=np.float32)
             buffer.clear()
+            pre_speech_buffer.clear()
+            speech_started = False
+            silence_frames = 0
+            speech_start_frames = 0
+            utterance_start_ts = 0.0
+            if len(to_process) >= int(MIN_UTTERANCE_MS / 1000 * SAMPLE_RATE):
+                def run_whisper():
+                    segments, _ = model.transcribe(to_process, language="en", vad_filter=True)
+                    return " ".join(s.text.strip() for s in segments if s.text).strip()
+
+                def put_result(fut):
+                    try:
+                        text = fut.result()
+                        if text and _transcript_queue is not None:
+                            _transcript_queue.put_nowait((text, time.monotonic()))
+                    except Exception as e:
+                        logger.exception("Whisper failed: %s", e)
+
+                fut = loop.run_in_executor(_executor, run_whisper)
+                loop.call_soon_threadsafe(fut.add_done_callback, put_result)
 
     stream = sd.InputStream(
         samplerate=SAMPLE_RATE,

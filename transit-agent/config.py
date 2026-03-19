@@ -24,6 +24,8 @@ WHISPER_MODEL: str = os.environ.get("WHISPER_MODEL", "base.en")
 STT_SILENCE_MS: int = int(os.environ.get("STT_SILENCE_MS", "500"))
 STT_MIN_UTTERANCE_MS: int = int(os.environ.get("STT_MIN_UTTERANCE_MS", "400"))
 STT_MAX_UTTERANCE_MS: int = int(os.environ.get("STT_MAX_UTTERANCE_MS", "8000"))
+STT_MIN_SPEECH_START_MS: int = int(os.environ.get("STT_MIN_SPEECH_START_MS", "120"))
+STT_ENERGY_THRESHOLD: float = float(os.environ.get("STT_ENERGY_THRESHOLD", "0.02"))
 
 # Ports
 VEHICLE_API_PORT: int = int(os.environ.get("VEHICLE_API_PORT", "8001"))

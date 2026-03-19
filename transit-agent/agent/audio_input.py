@@ -11,6 +11,7 @@ import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
 
+import config
 from agent import echo_guard
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,9 @@ _executor = ThreadPoolExecutor(max_workers=1)
 SAMPLE_RATE = 16000
 CHUNK_MS = 30
 CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_MS / 1000)
-SILENCE_MS = 700  # end of utterance after this much silence
-MIN_UTTERANCE_MS = 400
+SILENCE_MS = config.STT_SILENCE_MS  # end of utterance after this much silence
+MIN_UTTERANCE_MS = config.STT_MIN_UTTERANCE_MS
+MAX_UTTERANCE_MS = config.STT_MAX_UTTERANCE_MS
 
 
 def _energy_vad(samples: np.ndarray, threshold: float = 0.01) -> bool:
@@ -57,16 +59,18 @@ async def transcripts_from_mic_queued(
     buffer: list[np.ndarray] = []
     silence_frames = 0
     speech_started = False
+    utterance_start_ts = 0.0
     loop = asyncio.get_event_loop()
 
     def audio_callback(indata: np.ndarray, frames: int, time_info, status):
-        nonlocal speech_started, silence_frames
+        nonlocal speech_started, silence_frames, utterance_start_ts
         if status:
             logger.debug("Sounddevice: %s", status)
         if echo_guard.is_gated():
             buffer.clear()
             speech_started = False
             silence_frames = 0
+            utterance_start_ts = 0.0
             return
         chunk = indata.copy().flatten()
         if HAS_SILERO:
@@ -82,17 +86,23 @@ async def transcripts_from_mic_queued(
             is_speech = _energy_vad(chunk)
 
         if is_speech:
+            if not speech_started:
+                utterance_start_ts = time.monotonic()
             speech_started = True
             silence_frames = 0
             buffer.append(chunk)
         elif speech_started:
             buffer.append(chunk)
             silence_frames += 1
-            if silence_frames * CHUNK_MS >= SILENCE_MS:
+            elapsed_ms = int((time.monotonic() - utterance_start_ts) * 1000) if utterance_start_ts else 0
+            silence_reached = silence_frames * CHUNK_MS >= SILENCE_MS
+            max_reached = elapsed_ms >= MAX_UTTERANCE_MS
+            if silence_reached or max_reached:
                 to_process = np.concatenate(buffer) if buffer else np.array([], dtype=np.float32)
                 buffer.clear()
                 speech_started = False
                 silence_frames = 0
+                utterance_start_ts = 0.0
                 if len(to_process) >= int(MIN_UTTERANCE_MS / 1000 * SAMPLE_RATE):
                     def run_whisper():
                         segments, _ = model.transcribe(to_process, language="en", vad_filter=True)

@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import anthropic
 import config
 from agent.audio_input import transcript_generator
-from agent.audio_output import play_local_file, speak
+from agent.audio_output import play_local_file, speak, speak_nonblocking
 from agent.context import RideContext, make_mock_context
 from agent import display_server
 from agent import echo_guard
@@ -88,7 +88,10 @@ def _mark_transcript_processed(transcript: str) -> None:
 async def _speak_immediate_ack(ack_text: str) -> None:
     """Register ack with echo guard, update display, and speak so user knows they were heard."""
     echo_guard.register_utterance(ack_text)
-    await speak(ack_text)
+    if config.IMMEDIATE_ACK_ASYNC:
+        await speak_nonblocking(ack_text)
+    else:
+        await speak(ack_text)
 
 
 async def on_proactive_trigger(trigger_key: str, user_message: str) -> None:
@@ -161,10 +164,8 @@ async def main() -> None:
         display_thread.start()
         logger.info("Display HTTP server on http://0.0.0.0:%d (cabin: http://<agent-ip>:%d)", display_port, display_port)
 
-        # 2b. Spotify token server (for display Web Playback SDK) when Spotify is configured
-        spotify_token_task = None
-        if config.USE_SPOTIFY:
-            spotify_token_task = asyncio.create_task(spotify_token_server.run(config.SPOTIFY_TOKEN_PORT))
+        # 2b. Spotify token server (for display Web Playback SDK); always run so spotify_connect.html gets a clear error when not configured
+        spotify_token_task = asyncio.create_task(spotify_token_server.run(config.SPOTIFY_TOKEN_PORT))
 
         # 3. Proactive loop: only runs after PROACTIVE_MIN_SILENCE_SEC of no user/proactive turns
         offered: set[str] = set()
@@ -226,6 +227,7 @@ async def main() -> None:
             model_name=config.WHISPER_MODEL,
             input_device=config.AUDIO_INPUT_DEVICE,
         ):
+            turn_t0 = time.monotonic()
             if _transcript_seen_recently(transcript):
                 logger.debug("Skipping duplicate transcript: %r", transcript[:50])
                 continue
@@ -244,15 +246,29 @@ async def main() -> None:
 
             async with _turn_lock:
                 try:
+                    llm_t0 = time.monotonic()
                     text, conversation = await run_turn(
                         transcript, ctx, offers_made_shared, conversation,
                         on_immediate_ack=_speak_immediate_ack,
                     )
+                    llm_ms = int((time.monotonic() - llm_t0) * 1000)
                     if text:
                         logger.info("Speaking: %s", text[:80] + "..." if len(text) > 80 else text)
+                        tts_t0 = time.monotonic()
                         await speak(text)
+                        tts_ms = int((time.monotonic() - tts_t0) * 1000)
                     else:
+                        tts_ms = 0
                         logger.warning("No response text to speak")
+                    end_to_end_ms = int((time.monotonic() - turn_t0) * 1000)
+                    stt_to_turn_ms = int((turn_t0 - transcript_ts) * 1000)
+                    logger.info(
+                        "Latency turn_ms=%d stt_to_turn_ms=%d llm_ms=%d tts_ms=%d",
+                        end_to_end_ms,
+                        max(0, stt_to_turn_ms),
+                        llm_ms,
+                        tts_ms,
+                    )
                 except anthropic.BadRequestError as e:
                     err_msg = str(e)
                     try:
@@ -264,7 +280,7 @@ async def main() -> None:
                     logger.error("Anthropic API error (e.g. low credits): %s", err_msg)
                     fallback = "I'm having trouble reaching my brain right now. Please try again in a moment."
                     await speak(fallback)
-                except anthropic.APIError as e:
+                except anthropic.APIError:
                     logger.exception("Anthropic API error")
                     fallback = "Something went wrong on my end. Please try again."
                     await speak(fallback)

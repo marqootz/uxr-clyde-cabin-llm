@@ -21,6 +21,9 @@ ELEVENLABS_VOICE_ID: str = os.environ.get("ELEVENLABS_VOICE_ID", "")
 
 # STT
 WHISPER_MODEL: str = os.environ.get("WHISPER_MODEL", "base.en")
+STT_SILENCE_MS: int = int(os.environ.get("STT_SILENCE_MS", "500"))
+STT_MIN_UTTERANCE_MS: int = int(os.environ.get("STT_MIN_UTTERANCE_MS", "400"))
+STT_MAX_UTTERANCE_MS: int = int(os.environ.get("STT_MAX_UTTERANCE_MS", "8000"))
 
 # Ports
 VEHICLE_API_PORT: int = int(os.environ.get("VEHICLE_API_PORT", "8001"))
@@ -30,6 +33,7 @@ DISPLAY_HTTP_PORT: int = int(os.environ.get("DISPLAY_HTTP_PORT", "3000"))
 
 # TTS: use ElevenLabs if key set, else pyttsx3
 USE_ELEVENLABS: bool = bool(ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID)
+IMMEDIATE_ACK_ASYNC: bool = os.environ.get("IMMEDIATE_ACK_ASYNC", "1").strip().lower() not in ("0", "false", "no", "off")
 
 # Audio device (override for different host; e.g. ALSA on Linux)
 AUDIO_INPUT_DEVICE: int | None = None  # None = default

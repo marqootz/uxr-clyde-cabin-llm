@@ -193,6 +193,18 @@ async def speak(text: str) -> None:
     await done
 
 
+async def speak_nonblocking(text: str) -> None:
+    """Queue speech and return immediately without waiting for playback completion."""
+    if not text or not text.strip():
+        return
+    global _speak_queue
+    if _speak_queue is None:
+        _speak_queue = asyncio.Queue()
+        asyncio.create_task(_speaker_loop())
+    done: asyncio.Future[None] = asyncio.get_event_loop().create_future()
+    await _speak_queue.put((text, done))
+
+
 async def _speaker_loop() -> None:
     """Dedicated loop that consumes the speak queue and plays TTS; completes future when done."""
     global _speak_queue
@@ -212,23 +224,33 @@ async def _speaker_loop() -> None:
         echo_guard.set_speaking(True)
         stop_level_event = asyncio.Event()
         level_task = asyncio.create_task(_emit_audio_level_envelope(stop_level_event))
+        turn_t0 = asyncio.get_event_loop().time()
         try:
             if config.USE_ELEVENLABS:
                 try:
+                    t0 = asyncio.get_event_loop().time()
                     audio_bytes, duration_ms = await _fetch_elevenlabs_with_timestamps(text)
+                    logger.info("Latency TTS fetch_with_timestamps_ms=%d text_len=%d", int((asyncio.get_event_loop().time() - t0) * 1000), len(text))
                 except Exception:
+                    t0 = asyncio.get_event_loop().time()
                     audio_bytes, duration_ms = await _fetch_elevenlabs_fallback(text)
+                    logger.info("Latency TTS fetch_fallback_ms=%d text_len=%d", int((asyncio.get_event_loop().time() - t0) * 1000), len(text))
                 data: dict[str, object] = {"text": text}
                 if duration_ms is not None:
                     data["duration_ms"] = duration_ms
                 await display_server.send_layout("speaking", data)
+                t0 = asyncio.get_event_loop().time()
                 await _play_audio_bytes(audio_bytes)
+                logger.info("Latency TTS playback_ms=%d text_len=%d", int((asyncio.get_event_loop().time() - t0) * 1000), len(text))
             else:
                 await display_server.send_layout("speaking", {"text": text})
+                t0 = asyncio.get_event_loop().time()
                 await loop.run_in_executor(None, _play_pyttsx3, text)
+                logger.info("Latency TTS pyttsx3_playback_ms=%d text_len=%d", int((asyncio.get_event_loop().time() - t0) * 1000), len(text))
         except Exception as e:
             logger.exception("TTS playback failed: %s", e)
         finally:
+            logger.info("Latency TTS total_turn_ms=%d text_len=%d", int((asyncio.get_event_loop().time() - turn_t0) * 1000), len(text))
             stop_level_event.set()
             try:
                 await asyncio.wait_for(level_task, timeout=0.5)
